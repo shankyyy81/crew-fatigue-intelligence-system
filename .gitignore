@@ -1,0 +1,48 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+venv/
+.venv/
+env/
+
+# ML artifacts (large files — regenerate with python3 ml/train.py)
+backend/ml/model.pkl
+backend/ml/shap_summary_bar.png
+backend/ml/shap_summary_beeswarm.png
+backend/ml/model_metrics.json
+backend/ml/feature_names.json
+backend/ml/numeric_cols.json
+backend/ml/categorical_cols.json
+backend/ml/__pycache__/
+
+# Environment
+.env
+*.env.local
+
+# Node
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+frontend/node_modules/.cache/
+
+# macOS
+.DS_Store
+**/.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/settings.json
+*.swp
+*.swo
+
+# Logs
+*.log
+npm-debug.log*

@@ -1,0 +1,235 @@
+========================================================
+  CREW FATIGUE INTELLIGENCE SYSTEM — HOW TO RUN
+========================================================
+
+This project has two parts that need to run simultaneously:
+  1. Backend  — Python FastAPI server (port 8000)
+  2. Frontend — React/Vite dev server (port 5173)
+
+You also need MongoDB running in the background.
+
+--------------------------------------------------------
+  PREREQUISITES — Install these before you begin
+--------------------------------------------------------
+
+1. Python 3.11 or higher
+   Check: python3 --version
+
+2. Node.js 18 or higher
+   Check: node --version
+
+3. MongoDB Community Edition
+   Install on Mac:
+     brew tap mongodb/brew
+     brew install mongodb-community
+   
+   Or download from: https://www.mongodb.com/try/download/community
+
+4. pip3 (comes with Python — used to install Python packages)
+
+5. npm (comes with Node.js — used to install frontend packages)
+
+
+--------------------------------------------------------
+  STEP 1 — Start MongoDB
+--------------------------------------------------------
+
+Open a terminal and run:
+
+  brew services start mongodb-community
+
+OR if not using Homebrew:
+
+  mongod
+
+MongoDB must be running before you start the backend.
+You can verify it's running with: mongosh
+
+
+--------------------------------------------------------
+  STEP 2 — Set Up the Backend (first time only)
+--------------------------------------------------------
+
+Open a terminal and navigate to the backend folder:
+
+  cd "/Users/shashanksathish/Desktop/hindustan hackathon/backend"
+
+Install all Python packages:
+
+  pip3 install fastapi uvicorn motor pymongo python-dotenv \
+               xgboost scikit-learn shap numpy pandas matplotlib scipy
+
+Copy the environment file (only needed once):
+
+  cp ../.env.example .env
+
+Train the ML model (this takes about 60 seconds):
+
+  python3 ml/train.py
+
+  You should see output like:
+    [TRAIN] Best CV AUC: 1.0000
+    [TRAIN] model.pkl saved
+
+Seed the database with demo data (only needed once):
+
+  python3 seed.py
+
+  You should see output like:
+    [SEED] Inserting 201 crew profiles...
+    [SEED] Done! Demo crew: Captain Priya Sharma (C9999)
+
+Note: If you run seed.py again it will clear and re-seed the database.
+
+
+--------------------------------------------------------
+  STEP 3 — Start the Backend Server
+--------------------------------------------------------
+
+In the same terminal (inside the backend folder):
+
+  uvicorn main:app --reload --port 8000
+
+You should see:
+  INFO:     Uvicorn running on http://127.0.0.1:8000
+  INFO:     Application startup complete.
+
+Leave this terminal running.
+
+To verify the backend is working, open in your browser:
+  http://localhost:8000/docs      (Swagger interactive API docs)
+  http://localhost:8000/stats     (live JSON stats)
+
+
+--------------------------------------------------------
+  STEP 4 — Set Up the Frontend (first time only)
+--------------------------------------------------------
+
+Open a NEW terminal tab and navigate to the frontend folder:
+
+  cd "/Users/shashanksathish/Desktop/hindustan hackathon/frontend"
+
+Install all frontend packages:
+
+  npm install
+
+
+--------------------------------------------------------
+  STEP 5 — Start the Frontend Server
+--------------------------------------------------------
+
+In the same terminal (inside the frontend folder):
+
+  npm run dev
+
+You should see:
+  VITE v5.x.x  ready in XXX ms
+  Local:   http://localhost:5173/
+
+Leave this terminal running.
+
+
+--------------------------------------------------------
+  STEP 6 — Open the App
+--------------------------------------------------------
+
+Open your browser and go to:
+
+  http://localhost:5173
+
+The app should load showing the Crew Fatigue dashboard.
+
+
+--------------------------------------------------------
+  DEMO WALKTHROUGH
+--------------------------------------------------------
+
+Once the app is open, follow these steps to see everything:
+
+1. OVERVIEW PAGE
+   - You'll see a grid of 200+ crew members colour-coded
+     RED (high risk), AMBER (moderate), GREEN (safe)
+   - Click "Activate Demo" in the banner at the top
+   - This flags Captain Priya Sharma (C9999) as RED
+     with a duty flight DEL→LHR coming up in 14 hours
+
+2. VIEW CREW DETAIL
+   - Click on Captain Priya Sharma's card (or any card)
+   - A side drawer opens showing:
+       - Layer 1 / Layer 2 / Layer 3 score breakdown
+       - 7-day fatigue trajectory chart
+       - Top SHAP explainability drivers
+       - Upcoming duty schedule
+
+3. REPLACEMENT CONSOLE (left sidebar → Replacements)
+   - Sharma is pre-selected as the at-risk crew
+   - You'll see 3 ranked replacement candidates:
+       #1 First Officer Arjun Mehta  (DEL, B787, GREEN, reach 1.2h)
+       #2 Captain Vikram Nair        (DEL, B787, GREEN, standby)
+       #3 Captain Sneha Krishnan     (BOM, B787, GREEN, can position)
+   - Click "Assign as Replacement" on your chosen candidate
+   - A success confirmation appears with estimated savings
+
+4. CASCADE IMPACT (left sidebar → Cascade Impact)
+   - Shows all flights that would be affected if Sharma calls in unfit
+   - DEL→LHR (HIGH RISK), LHR→DEL (MEDIUM), DEL→BOM (LOW)
+   - After assigning a replacement, re-visit this page
+   - The flights will show a green "PROTECTED" shield
+
+5. MODEL PERFORMANCE (left sidebar → Model Performance)
+   - Shows ML model metrics: AUC, Precision, Recall, Accuracy
+   - Confusion matrix (true/false positives and negatives)
+   - SHAP feature importance bar chart
+   - Click "Retrain Model (Demo)" to trigger a background retrain
+
+
+--------------------------------------------------------
+  TROUBLESHOOTING
+--------------------------------------------------------
+
+Problem: "No module named 'motor'" or similar Python errors
+Fix:     pip3 install motor pymongo fastapi uvicorn
+
+Problem: Frontend shows a blank white page
+Fix:     Hard refresh the browser: Cmd + Shift + R
+
+Problem: "Connection refused" when backend starts
+Fix:     Make sure MongoDB is running (Step 1 above)
+
+Problem: Crew grid doesn't load / API errors in console
+Fix:     Confirm backend is running on port 8000
+         Open http://localhost:8000/stats in browser
+         If it returns JSON, backend is fine — check browser console
+
+Problem: Port 8000 or 5173 already in use
+Fix:     Kill the existing process:
+           lsof -ti:8000 | xargs kill -9
+           lsof -ti:5173 | xargs kill -9
+         Then restart the servers
+
+Problem: "mongod: command not found"
+Fix:     MongoDB not installed. Install with:
+           brew install mongodb-community
+         Then: brew services start mongodb-community
+
+
+--------------------------------------------------------
+  SUMMARY — EVERYDAY USAGE
+--------------------------------------------------------
+
+Every time you want to run the project:
+
+  Terminal 1:  brew services start mongodb-community
+               (skip if already running)
+
+  Terminal 2:  cd ".../hindustan hackathon/backend"
+               uvicorn main:app --reload --port 8000
+
+  Terminal 3:  cd ".../hindustan hackathon/frontend"
+               npm run dev
+
+  Browser:     http://localhost:5173
+
+The train and seed steps are one-time only.
+
+========================================================
