@@ -6,6 +6,7 @@ import { AlertFeed } from '../components/AlertFeed'
 import { CrewDetailDrawer } from '../components/CrewDetailDrawer'
 import { RiskBadge } from '../components/RiskBadge'
 import { CountdownTimer } from '../components/CountdownTimer'
+import { IndiaMap } from '../components/IndiaMap'
 import { showToast } from '../components/Toast'
 import { Users, AlertTriangle, TrendingDown, DollarSign, Search, Zap, RefreshCw } from 'lucide-react'
 
@@ -205,14 +206,23 @@ export function OverviewPage() {
                     </div>
                 </div>
 
-                {/* Alert Feed */}
-                <div style={{ width: 320, flexShrink: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                        <div className="section-title" style={{ marginBottom: 0 }}>LIVE ALERTS</div>
-                        <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{alerts.length} events</span>
+                {/* India Map + Alert Feed */}
+                <div style={{ width: 320, flexShrink: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', gap: 12 }}>
+
+                    {/* India Map */}
+                    <div className="card" style={{ padding: '12px 14px', flexShrink: 0, height: 310 }}>
+                        <IndiaMap onBaseClick={base => setBaseFilter(prev => prev === base ? '' : base)} />
                     </div>
-                    <div className="scroll-area">
-                        <AlertFeed alerts={alerts} loading={loading} onCrewClick={setSelectedId} />
+
+                    {/* Alert feed */}
+                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                            <div className="section-title" style={{ marginBottom: 0 }}>LIVE ALERTS</div>
+                            <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{alerts.length} events</span>
+                        </div>
+                        <div className="scroll-area">
+                            <AlertFeed alerts={alerts} loading={loading} onCrewClick={setSelectedId} />
+                        </div>
                     </div>
                 </div>
             </div>

@@ -28,6 +28,53 @@ NOW       = datetime.utcnow()
 random.seed(42)
 np.random.seed(42)
 
+# ─── Indian Names ──────────────────────────────────────────────────────────────
+MALE_FIRST = [
+    "Rajesh", "Vikram", "Arjun", "Rahul", "Arun", "Suresh", "Manish", "Deepak",
+    "Rohit", "Amit", "Sanjay", "Nikhil", "Karthik", "Pradeep", "Anand", "Ravi",
+    "Manoj", "Vishal", "Gaurav", "Varun", "Sachin", "Vivek", "Kunal", "Ajay",
+    "Vijay", "Ramesh", "Sunil", "Aakash", "Pranav", "Harish", "Girish", "Dinesh",
+    "Bhavesh", "Neeraj", "Tarun", "Pankaj", "Ankur", "Sumit", "Saurabh", "Akhil",
+    "Nitin", "Mohit", "Lalit", "Hemant", "Yogesh", "Abhishek", "Pratik", "Kartik",
+    "Rohan", "Yash", "Akash", "Dev", "Harsh", "Jay", "Kiran", "Naveen",
+    "Omkar", "Parth", "Rajan", "Sameer", "Tejas", "Uday", "Vinay", "Wasim",
+    "Xavier", "Yogendra", "Zubin", "Aarav", "Bhuvan", "Chirag", "Darshan", "Eshan",
+    "Farhan", "Gauransh", "Hitesh", "Ishaan", "Jatin", "Kedar", "Lakshman", "Mihir",
+    "Naresh", "Omkar", "Prathamesh", "Ruchit", "Shivam", "Tushar", "Utkarsh", "Vipul",
+    "Waqar", "Yuvraj", "Zeeshan", "Abhinav", "Balaji", "Chetan", "Dushyant", "Eknath",
+]
+FEMALE_FIRST = [
+    "Priya", "Anjali", "Meera", "Sneha", "Kavita", "Anita", "Shreya", "Preeti",
+    "Nisha", "Pooja", "Asha", "Divya", "Geeta", "Hema", "Ila", "Jyoti",
+    "Kamini", "Lata", "Madhuri", "Nalini", "Poonam", "Radha", "Savita", "Tara",
+    "Uma", "Varsha", "Wanita", "Yamini", "Zara", "Aditi", "Bhavna", "Chhaya",
+    "Disha", "Ekta", "Falguni", "Gargi", "Harshita", "Isha", "Janaki", "Komal",
+    "Lavanya", "Manju", "Neha", "Ojasvini", "Pallavi", "Ritu", "Shweta", "Tanvi",
+    "Urvashi", "Vandana", "Wasundhara", "Yashoda", "Zeenat", "Aishwarya", "Bindu",
+    "Charu", "Deepika", "Esha", "Falak", "Geetanjali", "Harini", "Indira", "Jhanvi",
+    "Kritika", "Lipika", "Manasi", "Nandini", "Ovi", "Parvati", "Rekha", "Sunaina",
+    "Trisha", "Urmila", "Vidya", "Winnie", "Xeniya", "Yukta", "Zoya", "Aakanksha",
+    "Bharati", "Charulata", "Daksha", "Elakshi", "Fiona", "Gunjan", "Himani", "Ishita",
+]
+LAST_NAMES = [
+    "Sharma", "Patel", "Kumar", "Singh", "Gupta", "Verma", "Nair", "Iyer",
+    "Rao", "Reddy", "Shah", "Mehta", "Joshi", "Pandey", "Mishra", "Dubey",
+    "Tiwari", "Agarwal", "Chauhan", "Yadav", "Menon", "Pillai", "Krishnan", "Mukherjee",
+    "Chatterjee", "Banerjee", "Das", "Ghosh", "Roy", "Bose", "Sen", "Kapoor",
+    "Malhotra", "Khanna", "Chopra", "Arora", "Bhatia", "Sinha", "Saxena", "Tripathi",
+    "Bajaj", "Desai", "Kulkarni", "Patil", "Naik", "Sawant", "More", "Shinde",
+    "Kaur", "Gill", "Bains", "Dhillon", "Sandhu", "Randhawa", "Oberoi", "Walia",
+    "Raju", "Subramanian", "Venkatesh", "Srinivas", "Narayan", "Prakash", "Raman", "Subramaniam",
+]
+
+def generate_name(role: str) -> str:
+    """Generate a realistic Indian name, prefixed with role title."""
+    is_female = random.random() < 0.40  # 40% female crew
+    first = random.choice(FEMALE_FIRST if is_female else MALE_FIRST)
+    last  = random.choice(LAST_NAMES)
+    prefix = "Capt." if role == "Captain" else ("F/O" if role == "First Officer" else "CA")
+    return f"{prefix} {first} {last}"
+
 
 # ─── Helper ────────────────────────────────────────────────────────────────────
 def rand_score_row(tier_target: str = None):
@@ -185,10 +232,12 @@ for cid in crew_ids:
     h_start = f"{random.randint(21,23):02d}:{random.choice(['00','15','30','45'])}"
     h_end   = f"{random.randint(6,8):02d}:{random.choice(['00','15','30','45'])}"
 
+    name = generate_name(role)
+
     crew_doc = {
         "_id": cid,
         "crew_id": cid,
-        "name": f"Crew {cid}",
+        "name": name,
         "role": role,
         "base": base,
         "aircraft_type": aircraft,
@@ -207,7 +256,7 @@ for cid in crew_ids:
         prev_tier = "GREEN" if tier_now == "AMBER" else "AMBER"
         alert_docs.append({
             "crew_id": cid,
-            "crew_name": f"Crew {cid}",
+            "crew_name": name,
             "tier_from": prev_tier,
             "tier_to": tier_now,
             "reason": f"Score {pred['final_fatigue_score']:.0f}: high circadian misalignment + low wellness",
