@@ -1,11 +1,13 @@
 import React, { useEffect, useState, useCallback } from 'react'
-import { CrewProfile, Alert, Stats } from '../types'
+import type { CrewProfile, Alert, Stats } from '../types'
 import { getCrew, getAlerts, getStats, simulateAlert } from '../api'
 import { CrewCard } from '../components/CrewCard'
 import { AlertFeed } from '../components/AlertFeed'
 import { CrewDetailDrawer } from '../components/CrewDetailDrawer'
 import { RiskBadge } from '../components/RiskBadge'
-import { Users, AlertTriangle, TrendingDown, DollarSign, Search, Filter, Zap, RefreshCw } from 'lucide-react'
+import { CountdownTimer } from '../components/CountdownTimer'
+import { showToast } from '../components/Toast'
+import { Users, AlertTriangle, TrendingDown, DollarSign, Search, Zap, RefreshCw } from 'lucide-react'
 
 function KpiCard({ icon: Icon, label, value, sub, color }: any) {
     return (
@@ -32,6 +34,7 @@ export function OverviewPage() {
     const [tierFilter, setTierFilter] = useState<string>('')
     const [baseFilter, setBaseFilter] = useState<string>('')
     const [simulating, setSimulating] = useState(false)
+    const [sharmaNextDuty, setSharmaNextDuty] = useState<string | null>(null)
 
     const load = useCallback(async () => {
         setLoading(true)
@@ -43,21 +46,40 @@ export function OverviewPage() {
             const [crewData, alertData, statsData] = await Promise.all([
                 getCrew(params), getAlerts(), getStats()
             ])
-            setCrew(crewData.crew || [])
+            const allCrew: CrewProfile[] = crewData.crew || []
+            setCrew(allCrew)
             setAlerts(alertData.alerts || [])
             setStats(statsData)
+
+            // Find Sharma's next duty time for the countdown
+            const sharma = allCrew.find(c => c.crew_id === 'C9999')
+            if (sharma?.next_duties?.[0]?.departure_time) {
+                setSharmaNextDuty(sharma.next_duties[0].departure_time)
+            }
         } catch (e) { console.error(e) }
         setLoading(false)
     }, [tierFilter, baseFilter, search])
 
     useEffect(() => { load() }, [load])
 
+    // Auto-refresh every 30 seconds
+    useEffect(() => {
+        const id = setInterval(load, 30_000)
+        return () => clearInterval(id)
+    }, [load])
+
     const triggerDemo = async () => {
         setSimulating(true)
         try {
             await simulateAlert('sharma_escalation')
-            setSelectedId('C9999')
             await load()
+            setSelectedId('C9999')
+            // 🔔 Toast notification
+            showToast(
+                'alert',
+                '🚨 CRITICAL ALERT — RED Tier Escalation',
+                'Captain Priya Sharma (C9999) has crossed the RED threshold. Score 87.3. Duty DEL→LHR departing in ~14 hours. Immediate replacement action required.'
+            )
         } finally { setSimulating(false) }
     }
 
@@ -71,10 +93,15 @@ export function OverviewPage() {
                 <div className="demo-banner">
                     <AlertTriangle size={18} color="var(--tier-red)" />
                     <div style={{ flex: 1 }}>
-                        <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--tier-red)' }}>DEMO SCENARIO: </span>
+                        <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--tier-red)' }}>DEMO: </span>
                         <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
-                            Captain Priya Sharma (C9999) flagged <strong style={{ color: 'var(--tier-red)' }}>RED</strong> — duty DEL→LHR in 14 hours
+                            Captain Priya Sharma — <strong style={{ color: 'var(--tier-red)' }}>RED</strong>&nbsp;(score 87.3) — DEL→LHR
                         </span>
+                        {sharmaNextDuty && (
+                            <div style={{ marginTop: 4 }}>
+                                <CountdownTimer targetTime={sharmaNextDuty} label="Duty departure in" size="lg" />
+                            </div>
+                        )}
                     </div>
                     <button
                         className="btn btn-danger"

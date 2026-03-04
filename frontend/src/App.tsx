@@ -1,10 +1,12 @@
 import React from 'react'
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import { Sidebar } from './components/Sidebar'
+import { ToastContainer } from './components/Toast'
 import { OverviewPage } from './pages/OverviewPage'
 import { ReplacementsPage } from './pages/ReplacementsPage'
 import { CascadePage } from './pages/CascadePage'
 import { ModelPage } from './pages/ModelPage'
+import { ROIPage } from './pages/ROIPage'
 
 export default function App() {
   return (
@@ -39,11 +41,15 @@ export default function App() {
               <Route path="/" element={<OverviewPage />} />
               <Route path="/replacements" element={<ReplacementsPage />} />
               <Route path="/cascade" element={<CascadePage />} />
+              <Route path="/roi" element={<ROIPage />} />
               <Route path="/model" element={<ModelPage />} />
             </Routes>
           </div>
         </main>
       </div>
+
+      {/* Global toast notifications — outside main layout so they float above everything */}
+      <ToastContainer />
     </BrowserRouter>
   )
 }
