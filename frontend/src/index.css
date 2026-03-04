@@ -210,13 +210,12 @@ body,
   border-left: 3px solid var(--tier-green);
 }
 
-/* Alert item */
 .alert-item {
-  padding: 12px;
-  border-radius: 10px;
+  padding: 18px;
+  border-radius: 12px;
   border: 1px solid var(--border-subtle);
   background: var(--bg-card);
-  margin-bottom: 8px;
+  margin-bottom: 12px;
   transition: all 0.2s;
 }
 

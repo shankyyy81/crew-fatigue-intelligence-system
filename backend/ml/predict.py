@@ -45,14 +45,14 @@ def compute_layer1(row: dict) -> float:
     circ   = float(row.get("circadian_misalignment") or 0.0)
     tz     = abs(float(row.get("timezone_displacement_hours") or 0.0))
 
-    score = 100.0
-    score -= max(0, duty - 8.0) * 6.0
-    score -= (14.0 if rest < 7.0 else 0.0)
-    score -= max(0, 7.0 - rest) * 2.0
-    score -= max(0, consec - 3.0) * 6.0
-    score -= night * 10.0
-    score -= min(circ, 1.0) * 12.0
-    score -= min(tz, 5.0) * 2.0
+    score = 15.0
+    score += max(0, duty - 8.0) * 8.0
+    score += (14.0 if rest < 7.0 else 0.0)
+    score += max(0, 7.0 - rest) * 4.0
+    score += max(0, consec - 3.0) * 6.0
+    score += night * 10.0
+    score += min(circ, 1.0) * 15.0
+    score += min(tz, 5.0) * 3.0
     return float(np.clip(score, 0, 100))
 
 

@@ -36,7 +36,7 @@ export function AlertFeed({ alerts, loading, onCrewClick }: Props) {
     }
 
     return (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             {alerts.map((a, i) => (
                 <div
                     key={i}
@@ -44,38 +44,38 @@ export function AlertFeed({ alerts, loading, onCrewClick }: Props) {
                     onClick={() => onCrewClick?.(a.crew_id)}
                     style={{ cursor: onCrewClick ? 'pointer' : 'default' }}
                 >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                            {a.tier_to === 'RED' && <AlertTriangle size={13} color="var(--tier-red)" />}
-                            <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                            {a.tier_to === 'RED' && <AlertTriangle size={16} color="var(--tier-red)" />}
+                            <span style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)' }}>
                                 {a.crew_name}
                             </span>
-                            <ChevronRight size={10} color="var(--text-muted)" />
-                            <RiskBadge tier={a.tier_from} size="sm" />
-                            <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>→</span>
-                            <RiskBadge tier={a.tier_to} size="sm" />
+                            <ChevronRight size={14} color="var(--text-muted)" />
+                            <RiskBadge tier={a.tier_from} />
+                            <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>→</span>
+                            <RiskBadge tier={a.tier_to} />
                         </div>
-                        <span style={{ fontSize: 10, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 3, flexShrink: 0 }}>
-                            <Clock size={10} /> {timeAgo(a.timestamp)}
+                        <span style={{ fontSize: 12, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+                            <Clock size={12} /> {timeAgo(a.timestamp)}
                         </span>
                     </div>
-                    <p style={{ fontSize: 11, color: 'var(--text-secondary)', lineHeight: 1.4, marginBottom: 6 }}>
-                        {a.reason.length > 100 ? a.reason.slice(0, 97) + '…' : a.reason}
+                    <p style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.5, marginBottom: 12 }}>
+                        {a.reason.length > 120 ? a.reason.slice(0, 117) + '…' : a.reason}
                     </p>
-                    <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                         {a.top_factors.map(f => (
                             <span key={f} style={{
                                 background: 'var(--bg-primary)', border: '1px solid var(--border)',
-                                borderRadius: 4, fontSize: 10, padding: '2px 6px', color: 'var(--text-muted)',
+                                borderRadius: 6, fontSize: 11, padding: '4px 8px', color: 'var(--text-muted)', fontWeight: 500
                             }}>{f}</span>
                         ))}
                         <span style={{
-                            marginLeft: 'auto', fontSize: 10, padding: '2px 8px',
-                            borderRadius: 4,
+                            marginLeft: 'auto', fontSize: 11, padding: '4px 10px',
+                            borderRadius: 6, fontWeight: 700,
                             background: a.status === 'resolved' ? 'rgba(16,185,129,0.1)' : 'rgba(245,158,11,0.1)',
                             color: a.status === 'resolved' ? 'var(--tier-green)' : 'var(--tier-amber)',
                         }}>
-                            {a.status}
+                            {a.status === 'open' ? 'OPEN' : 'RESOLVED'}
                         </span>
                     </div>
                 </div>

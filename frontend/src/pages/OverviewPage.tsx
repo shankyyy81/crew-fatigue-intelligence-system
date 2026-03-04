@@ -75,11 +75,12 @@ export function OverviewPage() {
             await simulateAlert('sharma_escalation')
             await load()
             setSelectedId('C9999')
-            // 🔔 Toast notification
+            // 🔔 Dramatic Toast notification
             showToast(
                 'alert',
-                '🚨 CRITICAL ALERT — RED Tier Escalation',
-                'Captain Priya Sharma (C9999) has crossed the RED threshold. Score 87.3. Duty DEL→LHR departing in ~14 hours. Immediate replacement action required.'
+                '🚨 CRITICAL SYSTEM ALERT',
+                'Captain Priya Sharma just crossed RED threshold.',
+                15000
             )
         } finally { setSimulating(false) }
     }
@@ -207,10 +208,10 @@ export function OverviewPage() {
                 </div>
 
                 {/* India Map + Alert Feed */}
-                <div style={{ width: 320, flexShrink: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', gap: 12 }}>
+                <div style={{ width: 360, flexShrink: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', gap: 12, minHeight: 0 }}>
 
                     {/* India Map */}
-                    <div className="card" style={{ padding: '12px 14px', flexShrink: 0, height: 310 }}>
+                    <div className="card" style={{ padding: '12px 14px', flexShrink: 0, height: 260 }}>
                         <IndiaMap onBaseClick={base => setBaseFilter(prev => prev === base ? '' : base)} />
                     </div>
 

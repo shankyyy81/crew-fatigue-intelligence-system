@@ -39,23 +39,59 @@ function ToastItem({ toast, onRemove }: { toast: Toast; onRemove: (id: number) =
 
     return (
         <div style={{
-            display: 'flex', gap: 12, alignItems: 'flex-start',
-            background: c.bg, border: `1px solid ${c.border}`,
-            borderRadius: 12, padding: '14px 16px',
-            boxShadow: `0 8px 32px rgba(0,0,0,0.4), 0 0 0 1px ${c.border}`,
-            animation: 'toast-in 0.35s cubic-bezier(0.34,1.56,0.64,1)',
-            minWidth: 340, maxWidth: 420,
-            backdropFilter: 'blur(8px)',
+            display: 'flex', gap: 14, alignItems: 'flex-start',
+            background: toast.type === 'alert' ? 'rgba(239,68,68,0.15)' : c.bg,
+            border: `2px solid ${c.border}`,
+            borderRadius: 14, padding: toast.type === 'alert' ? '20px' : '14px 16px',
+            boxShadow: toast.type === 'alert'
+                ? `0 12px 40px rgba(239,68,68,0.4), 0 0 0 2px rgba(239,68,68,0.5)`
+                : `0 8px 32px rgba(0,0,0,0.4), 0 0 0 1px ${c.border}`,
+            animation: toast.type === 'alert'
+                ? 'toast-drama 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards, toast-shake 0.4s 0.6s'
+                : 'toast-in 0.4s cubic-bezier(0.34,1.56,0.64,1)',
+            minWidth: 340, maxWidth: 440,
+            backdropFilter: 'blur(12px)',
+            position: 'relative',
+            overflow: 'hidden'
         }}>
-            <div style={{ width: 36, height: 36, borderRadius: 10, background: `${c.color}20`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                <Icon size={18} color={c.color} />
+            {toast.type === 'alert' && (
+                <div style={{
+                    position: 'absolute', inset: 0,
+                    background: 'linear-gradient(45deg, transparent, rgba(239,68,68,0.1), transparent)',
+                    animation: 'toast-shimmer 2s infinite linear'
+                }} />
+            )}
+            <div style={{
+                width: toast.type === 'alert' ? 44 : 36,
+                height: toast.type === 'alert' ? 44 : 36,
+                borderRadius: 12, background: `${c.color}20`,
+                display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                border: toast.type === 'alert' ? `1px solid ${c.color}60` : 'none',
+                boxShadow: toast.type === 'alert' ? `0 0 15px ${c.color}40` : 'none',
+                zIndex: 1
+            }}>
+                <Icon size={toast.type === 'alert' ? 24 : 18} color={c.color} />
             </div>
-            <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 3 }}>{toast.title}</div>
-                <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.5 }}>{toast.message}</div>
+            <div style={{ flex: 1, zIndex: 1, marginTop: toast.type === 'alert' ? 2 : 0 }}>
+                <div style={{
+                    fontSize: toast.type === 'alert' ? 16 : 13,
+                    fontWeight: toast.type === 'alert' ? 800 : 700,
+                    color: toast.type === 'alert' ? '#fff' : 'var(--text-primary)',
+                    marginBottom: 4, letterSpacing: toast.type === 'alert' ? 0.5 : 0,
+                    textShadow: toast.type === 'alert' ? '0 2px 4px rgba(0,0,0,0.5)' : 'none'
+                }}>{toast.title}</div>
+                <div style={{
+                    fontSize: toast.type === 'alert' ? 14 : 12,
+                    color: toast.type === 'alert' ? 'rgba(255,255,255,0.9)' : 'var(--text-secondary)',
+                    lineHeight: 1.5, fontWeight: toast.type === 'alert' ? 500 : 400
+                }}>{toast.message}</div>
             </div>
-            <button onClick={() => onRemove(toast.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 2, flexShrink: 0 }}>
-                <X size={14} />
+            <button onClick={() => onRemove(toast.id)} style={{
+                background: 'none', border: 'none', cursor: 'pointer',
+                color: toast.type === 'alert' ? 'rgba(255,255,255,0.6)' : 'var(--text-muted)',
+                padding: 4, flexShrink: 0, zIndex: 1, transition: 'color 0.2s'
+            }} onMouseEnter={(e) => e.currentTarget.style.color = '#fff'} onMouseLeave={(e) => e.currentTarget.style.color = toast.type === 'alert' ? 'rgba(255,255,255,0.6)' : 'var(--text-muted)'}>
+                <X size={16} />
             </button>
         </div>
     )
@@ -66,7 +102,12 @@ export function ToastContainer() {
 
     useEffect(() => {
         _setToasts = setToasts
-        return () => { _setToasts = null }
+        return () => {
+            // Only clear if this exact setter is still the active one (fixes React 18 StrictMode issue)
+            if (_setToasts === setToasts) {
+                _setToasts = null
+            }
+        }
     }, [])
 
     const remove = useCallback((id: number) => {
@@ -79,8 +120,23 @@ export function ToastContainer() {
         <>
             <style>{`
         @keyframes toast-in {
-          from { opacity: 0; transform: translateX(100%) scale(0.9); }
-          to   { opacity: 1; transform: translateX(0) scale(1); }
+          0% { opacity: 0; transform: translateX(100%) scale(0.9); }
+          100% { opacity: 1; transform: translateX(0) scale(1); }
+        }
+        @keyframes toast-drama {
+          0% { opacity: 0; transform: translateX(120%) scale(0.5) rotate(10deg); filter: brightness(2); }
+          60% { opacity: 1; transform: translateX(-5%) scale(1.05) rotate(-2deg); filter: brightness(1.2); }
+          80% { transform: translateX(2%) scale(0.98) rotate(1deg); }
+          100% { opacity: 1; transform: translateX(0) scale(1) rotate(0deg); filter: brightness(1); }
+        }
+        @keyframes toast-shake {
+          0%, 100% { transform: translateX(0); }
+          20%, 60% { transform: translateX(-4px); }
+          40%, 80% { transform: translateX(4px); }
+        }
+        @keyframes toast-shimmer {
+          0% { transform: translateX(-100%); }
+          100% { transform: translateX(100%); }
         }
       `}</style>
             <div style={{

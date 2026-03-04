@@ -133,7 +133,7 @@ def compute_prediction(features: dict) -> dict:
     l1 = compute_layer1(features)
     l3 = compute_layer3(features)
     # Simple proxy for ML score (no model needed for seed)
-    raw = (100 - features.get("wellness_score", 0.5) * 50
+    raw = (65 - features.get("wellness_score", 0.5) * 50
            + features.get("circadian_misalignment", 0) * 20
            + features.get("consecutive_duty_days", 0) * 4
            + features.get("swap_request_count_7d", 0) * 5)
@@ -205,15 +205,12 @@ for col in ["crew_profiles", "predictions", "alerts", "replacements", "cascade_e
 print("[SEED] Generating crew profiles...")
 crew_ids = [f"C{i}" for i in range(1023, 1223)]
 
-# Tier distribution: 70% GREEN, 20% AMBER, 10% RED
+# Tier distribution: 20% GREEN, 35% AMBER, 45% RED (Per user request)
 tier_map = {}
 for cid in crew_ids:
     r = random.random()
-    tier = "RED" if r < 0.10 else ("AMBER" if r < 0.30 else "GREEN")
+    tier = "RED" if r < 0.45 else ("AMBER" if r < 0.80 else "GREEN")
     tier_map[cid] = tier
-
-red_crew  = [c for c, t in tier_map.items() if t == "RED"][:5]
-amber_crew = [c for c, t in tier_map.items() if t == "AMBER"][:15]
 
 crew_docs = []
 pred_docs = []
@@ -370,62 +367,46 @@ alert_docs.append({
 
 # ─── Replacement Candidates for Sharma ────────────────────────────────────────
 print("[SEED] Adding replacement candidates for Sharma...")
-repl_docs = [
-    {
+
+# Find GREEN candidates
+green_candidates = [c for c in crew_docs if c["prediction"]["tier"] == "GREEN" and c["crew_id"] != "C9999"]
+selected_candidates = random.sample(green_candidates, min(3, len(green_candidates)))
+
+repl_docs = []
+for i, candidate in enumerate(selected_candidates):
+    # Ensure they match constraints ideally
+    if i == 0:
+        candidate["base"] = "DEL"
+        candidate["aircraft_type"] = "B787"
+        why = f"Same base (DEL), B787 rated, GREEN tier, DGCA hours compliant"
+    elif i == 1:
+        candidate["base"] = "DEL"
+        candidate["aircraft_type"] = "B787"
+        why = f"Same base (DEL), B787 rated, GREEN tier, standby duty"
+    else:
+        candidate["base"] = "BOM"
+        candidate["aircraft_type"] = "B787"
+        why = f"BOM base, B787 rated, GREEN tier — can position in time"
+
+    repl_docs.append({
         "for_crew_id": "C9999",
-        "rank": 1,
-        "candidate_id": "C1055",
-        "candidate_name": "First Officer Arjun Mehta",
-        "base": "DEL",
-        "aircraft_type": "B787",
-        "role": "First Officer",
+        "rank": i + 1,
+        "candidate_id": candidate["crew_id"],
+        "candidate_name": candidate["name"],
+        "base": candidate["base"],
+        "aircraft_type": candidate["aircraft_type"],
+        "role": candidate["role"],
         "tier": "GREEN",
-        "final_fatigue_score": 31.0,
-        "reach_time_hrs": 1.2,
+        "final_fatigue_score": candidate["prediction"]["final_fatigue_score"],
+        "reach_time_hrs": round(random.uniform(0.5, 2.5), 1),
         "dgca_compliant": True,
-        "hours_flown_28d": 52.0,
-        "hours_available": 28.0,
-        "why_eligible": "Same base (DEL), B787 rated, GREEN tier, DGCA hours compliant",
-        "disruption_cost_impact": 0.12,
+        "hours_flown_28d": round(random.uniform(40, 65), 1),
+        "hours_available": round(random.uniform(15, 35), 1),
+        "why_eligible": why,
+        "disruption_cost_impact": round(random.uniform(0.05, 0.25), 2),
         "assigned": False,
-    },
-    {
-        "for_crew_id": "C9999",
-        "rank": 2,
-        "candidate_id": "C1120",
-        "candidate_name": "Captain Vikram Nair",
-        "base": "DEL",
-        "aircraft_type": "B787",
-        "role": "Captain",
-        "tier": "GREEN",
-        "final_fatigue_score": 44.0,
-        "reach_time_hrs": 0.5,
-        "dgca_compliant": True,
-        "hours_flown_28d": 61.0,
-        "hours_available": 19.0,
-        "why_eligible": "Same base (DEL), B787 rated, GREEN tier, standby duty",
-        "disruption_cost_impact": 0.08,
-        "assigned": False,
-    },
-    {
-        "for_crew_id": "C9999",
-        "rank": 3,
-        "candidate_id": "C1182",
-        "candidate_name": "Captain Sneha Krishnan",
-        "base": "BOM",
-        "aircraft_type": "B787",
-        "role": "Captain",
-        "tier": "GREEN",
-        "final_fatigue_score": 38.0,
-        "reach_time_hrs": 2.5,
-        "dgca_compliant": True,
-        "hours_flown_28d": 48.0,
-        "hours_available": 32.0,
-        "why_eligible": "BOM base, B787 rated, GREEN tier — can position in time",
-        "disruption_cost_impact": 0.21,
-        "assigned": False,
-    },
-]
+    })
+
 
 # ─── Cascade Events for Sharma ────────────────────────────────────────────────
 print("[SEED] Adding cascade events for Sharma...")

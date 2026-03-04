@@ -6,6 +6,7 @@ import os, json
 from datetime import datetime, timedelta
 from typing import Optional, List
 import numpy as np
+import random
 
 from fastapi import FastAPI, HTTPException, Query, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
@@ -128,6 +129,25 @@ async def get_crew(crew_id: str):
 async def get_alerts(limit: int = Query(50, le=200)):
     cursor = alerts_col().find({}).sort("timestamp", -1).limit(limit)
     docs   = await cursor.to_list(length=limit)
+
+    # Fetch latest data from master crew collection
+    crew_ids = [d["crew_id"] for d in docs]
+    if crew_ids:
+        master_cursor = crew_col().find({"crew_id": {"$in": crew_ids}})
+        master_data = await master_cursor.to_list(length=limit)
+        master_map = {c["crew_id"]: c for c in master_data}
+        
+        for doc in docs:
+            cid = doc["crew_id"]
+            if cid in master_map:
+                master = master_map[cid]
+                # If tier_to isn't PROTECTED, ensure it matches current live tier
+                current_live_tier = master.get("prediction", {}).get("tier", "GREEN")
+                if doc.get("tier_to") != "PROTECTED":
+                    doc["tier_to"] = current_live_tier
+                # Fetch live name
+                doc["crew_name"] = master.get("name", doc.get("crew_name", cid))
+
     return {"alerts": clean_many(docs), "total": len(docs)}
 
 
@@ -161,10 +181,66 @@ async def simulate_alert(req: SimulateRequest):
 # ─── GET /replacements/{crew_id} ─────────────────────────────────────────────
 @app.get("/replacements/{crew_id}")
 async def get_replacements(crew_id: str):
-    cursor = replacements_col().find({"for_crew_id": crew_id}).sort("rank", 1)
-    docs   = await cursor.to_list(length=10)
-    if not docs:
-        raise HTTPException(status_code=404, detail=f"No replacements found for {crew_id}")
+    # Fetch details for the requested crew member
+    target_crew = await crew_col().find_one({"crew_id": crew_id})
+    if not target_crew:
+        raise HTTPException(status_code=404, detail=f"Crew {crew_id} not found")
+
+    target_role = target_crew.get("role")
+    target_base = target_crew.get("base")
+    target_aircraft = target_crew.get("aircraft_type")
+    
+    # Check if a replacement was already assigned in the static DB
+    assigned_doc = await replacements_col().find_one({"for_crew_id": crew_id, "assigned": True})
+    
+    # We will build exactly 3 replacements on-the-fly from the master data
+    candidates_cursor = crew_col().find({
+        "crew_id": {"$ne": crew_id},
+        "role": target_role,
+        "aircraft_type": target_aircraft,
+        "prediction.tier": "GREEN"
+    })
+    
+    candidates = await candidates_cursor.to_list(length=100)
+    
+    if not candidates:
+        raise HTTPException(status_code=404, detail=f"No replacement candidates found for {crew_id}")
+        
+    # Sort candidates logically
+    def candidate_score(c):
+        base_match = -100 if c.get("base") == target_base else 0
+        fatigue = c.get("prediction", {}).get("final_fatigue_score", 0)
+        return base_match + fatigue
+
+    candidates.sort(key=candidate_score)
+    top_candidates = candidates[:3]
+    
+    docs = []
+    for i, c in enumerate(top_candidates):
+        is_assigned = assigned_doc and assigned_doc["candidate_id"] == c["crew_id"]
+        same_base = c.get("base") == target_base
+        why = f"Same base ({c.get('base')}), {target_aircraft} rated, GREEN tier, DGCA hours compliant" if same_base else f"{c.get('base')} base, {target_aircraft} rated, GREEN tier — can position in time"
+        reach_time = 0.5 + (i * 0.5) if same_base else 2.5 + (i * 0.5)
+
+        docs.append({
+            "for_crew_id": crew_id,
+            "rank": i + 1,
+            "candidate_id": c["crew_id"],
+            "candidate_name": c["name"],
+            "base": c.get("base", ""),
+            "aircraft_type": c.get("aircraft_type", ""),
+            "role": c.get("role", ""),
+            "tier": "GREEN",
+            "final_fatigue_score": c.get("prediction", {}).get("final_fatigue_score", 0),
+            "reach_time_hrs": round(reach_time, 1),
+            "dgca_compliant": True,
+            "hours_flown_28d": 40 + i * 5,
+            "hours_available": 30 - i * 5,
+            "why_eligible": why,
+            "disruption_cost_impact": round(0.08 + (i * 0.05), 2),
+            "assigned": is_assigned,
+        })
+
     return {"for_crew_id": crew_id, "replacements": clean_many(docs), "count": len(docs)}
 
 
@@ -188,10 +264,14 @@ async def assign_replacement(req: AssignRequest):
         {"$set": {"protected": True, "replacement_id": req.candidate_id}}
     )
 
+    # Fetch crew name from master database
+    master_crew = await crew_col().find_one({"crew_id": req.for_crew_id})
+    crew_name = master_crew.get("name", req.for_crew_id) if master_crew else req.for_crew_id
+
     # Add resolution alert
     await alerts_col().insert_one({
         "crew_id": req.for_crew_id,
-        "crew_name": "Captain Priya Sharma" if req.for_crew_id == "C9999" else req.for_crew_id,
+        "crew_name": crew_name,
         "tier_from": "RED",
         "tier_to": "PROTECTED",
         "reason": f"Replacement assigned: {req.candidate_id}. Cascade risk resolved.",
@@ -212,17 +292,61 @@ async def assign_replacement(req: AssignRequest):
 # ─── GET /cascade/{crew_id} ───────────────────────────────────────────────────
 @app.get("/cascade/{crew_id}")
 async def get_cascade(crew_id: str):
-    cursor = cascade_col().find({"crew_id": crew_id}).sort("departure_time", 1)
-    docs   = await cursor.to_list(length=20)
-    if not docs:
-        raise HTTPException(status_code=404, detail=f"No cascade events for {crew_id}")
+    # Fetch details for the requested crew member
+    target_crew = await crew_col().find_one({"crew_id": crew_id})
+    if not target_crew:
+        raise HTTPException(status_code=404, detail=f"Crew {crew_id} not found")
+
+    # Check if this crew member has been protected by a replacement
+    assigned_doc = await replacements_col().find_one({"for_crew_id": crew_id, "assigned": True})
+    is_protected = bool(assigned_doc)
+
+    # Use crew_id to seed random for deterministic generation (so it doesn't change on refresh)
+    seed = int("".join(c for c in crew_id if c.isdigit()))
+    random.seed(seed)
+    
+    base = target_crew.get("base", "DEL")
+    destinations = [d for d in ["DEL", "BOM", "BLR", "HYD", "MAA", "CCU", "DXB", "SIN", "LHR"] if d != base]
+    aircraft = target_crew.get("aircraft_type", "A320")
+    
+    num_flights = random.randint(2, 4)
+    docs = []
+    
+    current_time = datetime.now() + timedelta(hours=random.randint(6, 18))
+    current_loc = base
+
+    for i in range(num_flights):
+        dest = random.choice([d for d in destinations if d != current_loc])
+        flight_id = f"6E-{random.randint(100, 999)}"
+        pax = random.randint(120, 300)
+        
+        # Risk degrades (gets higher) further into the future if unprotected
+        if is_protected:
+            risk = "LOW"
+        else:
+            risk = "HIGH" if i == 0 else ("MEDIUM" if i == 1 else "LOW")
+
+        docs.append({
+            "crew_id": crew_id,
+            "flight_id": flight_id,
+            "departure_time": current_time.isoformat(),
+            "route": f"{current_loc} \u2192 {dest}",
+            "station": current_loc,
+            "aircraft": aircraft,
+            "risk_level": risk,
+            "protected": is_protected,
+            "passengers": pax
+        })
+        
+        current_loc = dest
+        current_time += timedelta(hours=random.randint(6, 12))
 
     protected_count = sum(1 for d in docs if d.get("protected"))
     at_risk_count   = len(docs) - protected_count
 
     return {
         "crew_id":         crew_id,
-        "cascade_flights": clean_many(docs),
+        "cascade_flights": docs,
         "total_flights":   len(docs),
         "at_risk":         at_risk_count,
         "protected":       protected_count,
