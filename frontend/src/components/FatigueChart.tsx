@@ -48,7 +48,7 @@ export function FatigueChart({ data }: Props) {
                 <Line
                     type="monotone" dataKey="score"
                     stroke="url(#scoreGrad)" strokeWidth={2.5}
-                    dot={dot} activeDot={{ r: 7, fill: '#3b82f6' }}
+                    dot={dot} activeDot={true}
                 />
                 <defs>
                     <linearGradient id="scoreGrad" x1="0" y1="0" x2="0" y2="1">
