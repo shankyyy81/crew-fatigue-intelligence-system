@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { CrewProfile, Replacement } from '../types'
 import { getCrew, getReplacements, assignReplacement } from '../api'
 import { RiskBadge, ScoreGauge } from '../components/RiskBadge'
-import { CheckCircle, MapPin, Plane, User, Clock, Shield, AlertTriangle } from 'lucide-react'
+import { CheckCircle, MapPin, Plane, User, Clock, Shield, AlertTriangle, WifiOff } from 'lucide-react'
 
 export function ReplacementsPage() {
     const [redCrew, setRedCrew] = useState<CrewProfile[]>([])
@@ -11,15 +11,15 @@ export function ReplacementsPage() {
     const [loading, setLoading] = useState(false)
     const [assigned, setAssigned] = useState<string | null>(null)
     const [savings, setSavings] = useState<number | null>(null)
+    const [error, setError] = useState<string | null>(null)
 
     useEffect(() => {
         getCrew({ tier: 'RED' }).then(r => {
             const crew: CrewProfile[] = r.crew || []
             setRedCrew(crew)
-            // Auto-select Sharma if present
             const sharma = crew.find(c => c.crew_id === 'C9999')
             if (sharma) setSelected(sharma)
-        })
+        }).catch(() => setError('Failed to load RED crew. Is the backend running?'))
     }, [])
 
     useEffect(() => {
@@ -27,9 +27,10 @@ export function ReplacementsPage() {
         setLoading(true)
         setAssigned(null)
         setReplacements([])
+        setError(null)
         getReplacements(selected.crew_id)
             .then(r => setReplacements(r.replacements || []))
-            .catch(() => { })
+            .catch(() => setError('Failed to load replacements for this crew member.'))
             .finally(() => setLoading(false))
     }, [selected])
 
@@ -44,6 +45,19 @@ export function ReplacementsPage() {
 
     return (
         <div style={{ display: 'flex', height: '100%', overflow: 'hidden', padding: 20, gap: 20 }}>
+            {/* Error Banner */}
+            {error && (
+                <div style={{
+                    position: 'absolute', top: 20, left: 20, right: 20, zIndex: 10,
+                    display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px',
+                    background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)',
+                    borderRadius: 10, fontSize: 13, color: 'var(--tier-red)',
+                }}>
+                    <WifiOff size={16} />
+                    <span>{error}</span>
+                </div>
+            )}
+
             {/* Left: RED crew list */}
             <div style={{ width: 240, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
                 <div className="section-title">RED TIER CREW</div>
@@ -136,7 +150,7 @@ export function ReplacementsPage() {
                                                         <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{r.candidate_id} · {r.role} · {r.aircraft_type}</div>
                                                     </div>
                                                 </div>
-                                                <RiskBadge tier={r.candidate_id === assigned ? 'PROTECTED' as any : r.tier} />
+                                                <RiskBadge tier={r.candidate_id === assigned ? 'PROTECTED' : r.tier} />
                                             </div>
 
                                             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8, marginBottom: 10 }}>

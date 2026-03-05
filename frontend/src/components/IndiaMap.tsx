@@ -1,6 +1,5 @@
-import { useEffect, useState } from 'react'
-import { getCrew } from '../api'
-import type { CrewProfile } from '../types'
+import React from 'react'
+import { useState } from 'react'
 
 // Geographic positions mapped to SVG viewBox="0 0 340 440"
 // x = (lon - 67.5) / 30 * 310 + 15
@@ -40,26 +39,15 @@ const STATE_DOTS = [
 
 interface BaseStats { total: number; red: number; amber: number; green: number }
 
-export function IndiaMap({ onBaseClick }: { onBaseClick?: (base: string) => void }) {
-    const [stats, setStats] = useState<Record<string, BaseStats>>({})
-    const [hovered, setHovered] = useState<string | null>(null)
-    const [loading, setLoading] = useState(true)
+interface IndiaMapProps {
+    crewByBase?: Record<string, BaseStats>
+    onBaseClick?: (base: string) => void
+}
 
-    useEffect(() => {
-        getCrew({ limit: '300' } as any).then(r => {
-            const crew: CrewProfile[] = r.crew || []
-            const s: Record<string, BaseStats> = {}
-            for (const c of crew) {
-                const b = c.base
-                if (!b) continue
-                if (!s[b]) s[b] = { total: 0, red: 0, amber: 0, green: 0 }
-                s[b].total++
-                const tier = c.prediction?.tier?.toLowerCase() as 'red' | 'amber' | 'green'
-                if (tier) s[b][tier]++
-            }
-            setStats(s)
-        }).finally(() => setLoading(false))
-    }, [])
+export const IndiaMap = React.memo(function IndiaMap({ crewByBase, onBaseClick }: IndiaMapProps) {
+    const stats = crewByBase ?? {}
+    const [hovered, setHovered] = useState<string | null>(null)
+    const hasData = Object.keys(stats).length > 0
 
     const tierColor = (s: BaseStats) => {
         const redPct = s.red / s.total
@@ -74,13 +62,15 @@ export function IndiaMap({ onBaseClick }: { onBaseClick?: (base: string) => void
         <div style={{ position: 'relative', width: '100%', height: '100%' }}>
             <div className="section-title" style={{ padding: '0 0 8px' }}>FLEET RISK — INDIA BASE MAP</div>
 
-            {loading ? (
+            {!hasData ? (
                 <div className="skeleton" style={{ width: '100%', height: 380, borderRadius: 12 }} />
             ) : (
                 <svg
                     viewBox="0 0 340 440"
                     style={{ width: '100%', height: '100%', maxHeight: 440 }}
                     xmlns="http://www.w3.org/2000/svg"
+                    role="img"
+                    aria-label="India base map showing crew fatigue risk by airport"
                 >
                     <defs>
                         {Object.keys(BASES).map(b => {
@@ -135,9 +125,15 @@ export function IndiaMap({ onBaseClick }: { onBaseClick?: (base: string) => void
                             <g
                                 key={code}
                                 style={{ cursor: 'pointer' }}
+                                role="button"
+                                tabIndex={0}
+                                aria-label={`${code} base: ${s.red} RED, ${s.amber} AMBER, ${s.green} GREEN crew`}
                                 onClick={() => onBaseClick?.(code)}
+                                onKeyDown={e => e.key === 'Enter' && onBaseClick?.(code)}
                                 onMouseEnter={() => setHovered(code)}
                                 onMouseLeave={() => setHovered(null)}
+                                onFocus={() => setHovered(code)}
+                                onBlur={() => setHovered(null)}
                             >
                                 {/* Glow halo */}
                                 <circle cx={pos.x} cy={pos.y} r={r * 2.2} fill={`url(#glow-${code})`} opacity={isHover ? 1 : 0.65} />
@@ -202,9 +198,9 @@ export function IndiaMap({ onBaseClick }: { onBaseClick?: (base: string) => void
                                             strokeWidth="1"
                                         />
                                         <text x={pos.x + r + 10} y={pos.y - 16} fill={c.text} fontSize="9" fontWeight="800">{pos.city}</text>
-                                        <text x={pos.x + r + 10} y={pos.y - 4} fill="#ef4444" fontSize="8">🔴 RED:   {s.red}</text>
-                                        <text x={pos.x + r + 10} y={pos.y + 8} fill="#f59e0b" fontSize="8">🟡 AMBER: {s.amber}</text>
-                                        <text x={pos.x + r + 10} y={pos.y + 20} fill="#10b981" fontSize="8">🟢 GREEN: {s.green}</text>
+                                        <text x={pos.x + r + 10} y={pos.y - 4} fill="#ef4444" fontSize="8">RED:   {s.red}</text>
+                                        <text x={pos.x + r + 10} y={pos.y + 8} fill="#f59e0b" fontSize="8">AMBER: {s.amber}</text>
+                                        <text x={pos.x + r + 10} y={pos.y + 20} fill="#10b981" fontSize="8">GREEN: {s.green}</text>
                                         <text x={pos.x + r + 10} y={pos.y + 32} fill="rgba(140,160,200,0.7)" fontSize="7.5">Total: {s.total}</text>
                                     </g>
                                 )}
@@ -237,4 +233,4 @@ export function IndiaMap({ onBaseClick }: { onBaseClick?: (base: string) => void
       `}</style>
         </div>
     )
-}
+})

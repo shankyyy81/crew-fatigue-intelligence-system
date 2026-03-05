@@ -9,7 +9,7 @@ interface Props {
     highlighted?: boolean
 }
 
-export function CrewCard({ crew, onClick, highlighted }: Props) {
+export const CrewCard = React.memo(function CrewCard({ crew, onClick, highlighted }: Props) {
     const { prediction, name, crew_id, base, role, aircraft_type } = crew
     const tier = prediction?.tier || 'GREEN'
 
@@ -17,6 +17,10 @@ export function CrewCard({ crew, onClick, highlighted }: Props) {
         <div
             className={`crew-card tier-${tier.toLowerCase()}`}
             onClick={onClick}
+            onKeyDown={e => e.key === 'Enter' && onClick?.()}
+            role="button"
+            tabIndex={0}
+            aria-label={`${name} (${crew_id}) — ${tier} tier, fatigue score ${prediction?.final_fatigue_score?.toFixed(0) ?? 'unknown'}`}
             style={highlighted ? { borderColor: 'var(--tier-red)', boxShadow: '0 0 16px rgba(239,68,68,0.25)' } : {}}
         >
             {/* Header */}
@@ -56,4 +60,4 @@ export function CrewCard({ crew, onClick, highlighted }: Props) {
             <ScoreBar score={prediction?.final_fatigue_score || 0} />
         </div>
     )
-}
+})

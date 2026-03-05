@@ -16,7 +16,7 @@ function timeAgo(ts: string) {
     return `${Math.round(diff / 3600)}h ago`
 }
 
-export function AlertFeed({ alerts, loading, onCrewClick }: Props) {
+export const AlertFeed = React.memo(function AlertFeed({ alerts, loading, onCrewClick }: Props) {
     if (loading) {
         return (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -42,6 +42,10 @@ export function AlertFeed({ alerts, loading, onCrewClick }: Props) {
                     key={i}
                     className={`alert-item alert-${a.tier_to.toLowerCase()}`}
                     onClick={() => onCrewClick?.(a.crew_id)}
+                    onKeyDown={e => e.key === 'Enter' && onCrewClick?.(a.crew_id)}
+                    role={onCrewClick ? 'button' : undefined}
+                    tabIndex={onCrewClick ? 0 : undefined}
+                    aria-label={`Alert: ${a.crew_name} moved from ${a.tier_from} to ${a.tier_to}`}
                     style={{ cursor: onCrewClick ? 'pointer' : 'default' }}
                 >
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
@@ -82,4 +86,4 @@ export function AlertFeed({ alerts, loading, onCrewClick }: Props) {
             ))}
         </div>
     )
-}
+})

@@ -1,6 +1,5 @@
 import React from 'react'
 import { Tier } from '../types'
-import { AlertTriangle, CheckCircle, Circle } from 'lucide-react'
 
 interface Props {
     tier: Tier

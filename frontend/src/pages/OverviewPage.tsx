@@ -1,5 +1,5 @@
-import React, { useEffect, useState, useCallback } from 'react'
-import type { CrewProfile, Alert, Stats } from '../types'
+import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react'
+import type { CrewProfile, Alert, Stats, Tier } from '../types'
 import { getCrew, getAlerts, getStats, simulateAlert } from '../api'
 import { CrewCard } from '../components/CrewCard'
 import { AlertFeed } from '../components/AlertFeed'
@@ -8,9 +8,17 @@ import { RiskBadge } from '../components/RiskBadge'
 import { CountdownTimer } from '../components/CountdownTimer'
 import { IndiaMap } from '../components/IndiaMap'
 import { showToast } from '../components/Toast'
-import { Users, AlertTriangle, TrendingDown, DollarSign, Search, Zap, RefreshCw } from 'lucide-react'
+import { Users, AlertTriangle, TrendingDown, DollarSign, Search, Zap, RefreshCw, WifiOff } from 'lucide-react'
 
-function KpiCard({ icon: Icon, label, value, sub, color }: any) {
+interface KpiCardProps {
+    icon: React.ElementType
+    label: string
+    value: string | number
+    sub?: string
+    color: string
+}
+
+function KpiCard({ icon: Icon, label, value, sub, color }: KpiCardProps) {
     return (
         <div className="kpi-card">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
@@ -25,13 +33,24 @@ function KpiCard({ icon: Icon, label, value, sub, color }: any) {
     )
 }
 
+function useDebounce<T>(value: T, delay: number): T {
+    const [debounced, setDebounced] = useState(value)
+    useEffect(() => {
+        const id = setTimeout(() => setDebounced(value), delay)
+        return () => clearTimeout(id)
+    }, [value, delay])
+    return debounced
+}
+
 export function OverviewPage() {
     const [crew, setCrew] = useState<CrewProfile[]>([])
     const [alerts, setAlerts] = useState<Alert[]>([])
     const [stats, setStats] = useState<Stats | null>(null)
     const [loading, setLoading] = useState(true)
+    const [error, setError] = useState<string | null>(null)
     const [selectedId, setSelectedId] = useState<string | null>(null)
     const [search, setSearch] = useState('')
+    const debouncedSearch = useDebounce(search, 300)
     const [tierFilter, setTierFilter] = useState<string>('')
     const [baseFilter, setBaseFilter] = useState<string>('')
     const [simulating, setSimulating] = useState(false)
@@ -39,11 +58,12 @@ export function OverviewPage() {
 
     const load = useCallback(async () => {
         setLoading(true)
+        setError(null)
         try {
             const params: Record<string, string> = {}
             if (tierFilter) params.tier = tierFilter
             if (baseFilter) params.base = baseFilter
-            if (search) params.search = search
+            if (debouncedSearch) params.search = debouncedSearch
             const [crewData, alertData, statsData] = await Promise.all([
                 getCrew(params), getAlerts(), getStats()
             ])
@@ -57,9 +77,12 @@ export function OverviewPage() {
             if (sharma?.next_duties?.[0]?.departure_time) {
                 setSharmaNextDuty(sharma.next_duties[0].departure_time)
             }
-        } catch (e) { console.error(e) }
+        } catch (e) {
+            console.error(e)
+            setError('Failed to load data. Is the backend running on port 8000?')
+        }
         setLoading(false)
-    }, [tierFilter, baseFilter, search])
+    }, [tierFilter, baseFilter, debouncedSearch])
 
     useEffect(() => { load() }, [load])
 
@@ -69,16 +92,29 @@ export function OverviewPage() {
         return () => clearInterval(id)
     }, [load])
 
+    // Compute base stats from crew for IndiaMap (avoids duplicate fetch)
+    const baseStats = useMemo(() => {
+        const s: Record<string, { total: number; red: number; amber: number; green: number }> = {}
+        for (const c of crew) {
+            const b = c.base
+            if (!b) continue
+            if (!s[b]) s[b] = { total: 0, red: 0, amber: 0, green: 0 }
+            s[b].total++
+            const tier = c.prediction?.tier?.toLowerCase() as 'red' | 'amber' | 'green'
+            if (tier) s[b][tier]++
+        }
+        return s
+    }, [crew])
+
     const triggerDemo = async () => {
         setSimulating(true)
         try {
             await simulateAlert('sharma_escalation')
             await load()
             setSelectedId('C9999')
-            // 🔔 Dramatic Toast notification
             showToast(
                 'alert',
-                '🚨 CRITICAL SYSTEM ALERT',
+                'CRITICAL SYSTEM ALERT',
                 'Captain Priya Sharma just crossed RED threshold.',
                 15000
             )
@@ -89,6 +125,23 @@ export function OverviewPage() {
 
     return (
         <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+
+            {/* Error Banner */}
+            {error && (
+                <div style={{ padding: '12px 20px 0' }}>
+                    <div style={{
+                        display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px',
+                        background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)',
+                        borderRadius: 10, fontSize: 13, color: 'var(--tier-red)',
+                    }}>
+                        <WifiOff size={16} />
+                        <span style={{ flex: 1 }}>{error}</span>
+                        <button className="btn btn-ghost" onClick={load} style={{ fontSize: 11 }}>
+                            <RefreshCw size={12} /> Retry
+                        </button>
+                    </div>
+                </div>
+            )}
 
             {/* Demo Banner */}
             <div style={{ padding: '12px 20px 0' }}>
@@ -146,32 +199,37 @@ export function OverviewPage() {
                             <Search size={13} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
                             <input
                                 className="input" placeholder="Search crew name or ID…"
+                                aria-label="Search crew by name or ID"
                                 style={{ width: '100%', paddingLeft: 30 }}
                                 value={search}
                                 onChange={e => setSearch(e.target.value)}
                             />
                         </div>
-                        <select className="input" value={tierFilter} onChange={e => setTierFilter(e.target.value)} style={{ width: 110 }}>
+                        <select className="input" value={tierFilter} onChange={e => setTierFilter(e.target.value)} style={{ width: 110 }} aria-label="Filter by risk tier">
                             <option value="">All Tiers</option>
-                            <option value="RED">🔴 RED</option>
-                            <option value="AMBER">🟡 AMBER</option>
-                            <option value="GREEN">🟢 GREEN</option>
+                            <option value="RED">RED</option>
+                            <option value="AMBER">AMBER</option>
+                            <option value="GREEN">GREEN</option>
                         </select>
-                        <select className="input" value={baseFilter} onChange={e => setBaseFilter(e.target.value)} style={{ width: 90 }}>
+                        <select className="input" value={baseFilter} onChange={e => setBaseFilter(e.target.value)} style={{ width: 90 }} aria-label="Filter by base">
                             <option value="">All Bases</option>
                             {BASES.map(b => <option key={b} value={b}>{b}</option>)}
                         </select>
-                        <button className="btn btn-ghost" onClick={load} title="Refresh">
+                        <button className="btn btn-ghost" onClick={load} title="Refresh" aria-label="Refresh data">
                             <RefreshCw size={13} />
                         </button>
                     </div>
 
                     {/* Tier Legend */}
-                    <div style={{ display: 'flex', gap: 12, marginBottom: 10 }}>
-                        {['GREEN', 'AMBER', 'RED'].map(t => (
-                            <div key={t} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}
-                                onClick={() => setTierFilter(tierFilter === t ? '' : t)}>
-                                <RiskBadge tier={t as any} size="sm" />
+                    <div style={{ display: 'flex', gap: 12, marginBottom: 10 }} role="group" aria-label="Filter by tier">
+                        {(['GREEN', 'AMBER', 'RED'] as Tier[]).map(t => (
+                            <div key={t}
+                                role="button" tabIndex={0} aria-pressed={tierFilter === t}
+                                style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}
+                                onClick={() => setTierFilter(tierFilter === t ? '' : t)}
+                                onKeyDown={e => e.key === 'Enter' && setTierFilter(tierFilter === t ? '' : t)}
+                            >
+                                <RiskBadge tier={t} size="sm" />
                                 <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
                                     {crew.filter(c => c.prediction?.tier === t).length}
                                 </span>
@@ -212,7 +270,10 @@ export function OverviewPage() {
 
                     {/* India Map */}
                     <div className="card" style={{ padding: '12px 14px', flexShrink: 0, height: 260 }}>
-                        <IndiaMap onBaseClick={base => setBaseFilter(prev => prev === base ? '' : base)} />
+                        <IndiaMap
+                            crewByBase={baseStats}
+                            onBaseClick={base => setBaseFilter(prev => prev === base ? '' : base)}
+                        />
                     </div>
 
                     {/* Alert feed */}

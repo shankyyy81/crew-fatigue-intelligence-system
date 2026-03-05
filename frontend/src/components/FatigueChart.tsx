@@ -3,7 +3,13 @@ import type { TrajectoryPoint } from '../types'
 
 interface Props { data: TrajectoryPoint[] }
 
-const CustomTooltip = ({ active, payload, label }: any) => {
+interface TooltipProps {
+    active?: boolean
+    payload?: { value: number }[]
+    label?: string
+}
+
+const CustomTooltip = ({ active, payload, label }: TooltipProps) => {
     if (!active || !payload?.length) return null
     const score = payload[0]?.value as number
     const color = score > 80 ? '#ef4444' : score > 60 ? '#f59e0b' : '#10b981'
@@ -24,7 +30,7 @@ export function FatigueChart({ data }: Props) {
         tier: d.tier,
     }))
 
-    const dot = (props: any) => {
+    const dot = (props: { cx: number; cy: number; payload: { score: number } }) => {
         const { cx, cy, payload } = props
         const color = payload.score > 80 ? '#ef4444' : payload.score > 60 ? '#f59e0b' : '#10b981'
         return <circle key={`dot-${cx}-${cy}`} cx={cx} cy={cy} r={5} fill={color} stroke="var(--bg-secondary)" strokeWidth={2} />

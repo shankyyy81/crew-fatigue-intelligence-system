@@ -2,9 +2,16 @@ import React, { useEffect, useState } from 'react'
 import { ModelMetrics } from '../types'
 import { getModelMetrics, retrainModel } from '../api'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts'
-import { RotateCcw, CheckCircle, AlertTriangle, TrendingUp } from 'lucide-react'
+import { RotateCcw, CheckCircle, AlertTriangle, TrendingUp, Info } from 'lucide-react'
 
-function MetricCard({ label, value, color, fmt = (v: number) => (v * 100).toFixed(1) + '%' }: any) {
+interface MetricCardProps {
+    label: string
+    value: number
+    color?: string
+    fmt?: (v: number) => string
+}
+
+function MetricCard({ label, value, color, fmt = (v: number) => (v * 100).toFixed(1) + '%' }: MetricCardProps) {
     return (
         <div className="kpi-card" style={{ textAlign: 'center' }}>
             <div style={{ fontSize: 28, fontWeight: 900, color: color ?? 'var(--accent-blue)', marginBottom: 4 }}>{fmt(value)}</div>
@@ -16,13 +23,14 @@ function MetricCard({ label, value, color, fmt = (v: number) => (v * 100).toFixe
 export function ModelPage() {
     const [metrics, setMetrics] = useState<ModelMetrics | null>(null)
     const [loading, setLoading] = useState(true)
+    const [error, setError] = useState<string | null>(null)
     const [retraining, setRetraining] = useState(false)
     const [retrained, setRetrained] = useState(false)
 
     useEffect(() => {
         getModelMetrics()
             .then(setMetrics)
-            .catch(console.error)
+            .catch(() => setError('Failed to load model metrics.'))
             .finally(() => setLoading(false))
     }, [])
 
@@ -144,8 +152,16 @@ export function ModelPage() {
                             <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.6 }}>
                                 <strong style={{ color: 'var(--text-primary)' }}>Scoring Formula:</strong><br />
                                 <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 11 }}>
-                                    final_score = clamp(0.45 × Layer1_base + 0.45 × Layer2_ml + Layer3_behavioral_boost, 0, 100)
+                                    final_score = clamp(0.45 x Layer1_base + 0.45 x Layer2_ml + Layer3_behavioral_boost, 0, 100)
                                 </span>
+                            </div>
+                        </div>
+                        <div style={{ marginTop: 12, padding: 12, background: 'rgba(245,158,11,0.08)', borderRadius: 8, border: '1px solid rgba(245,158,11,0.2)', display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+                            <Info size={16} color="var(--tier-amber)" style={{ flexShrink: 0, marginTop: 1 }} />
+                            <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+                                <strong style={{ color: 'var(--tier-amber)' }}>Demo Note:</strong> This model is trained on synthetic data generated for demonstration purposes.
+                                Perfect metrics (AUC 1.0) reflect the synthetic training set — production deployment would use real FDTL/FRMS crew fatigue records,
+                                yielding realistic performance figures.
                             </div>
                         </div>
                     </div>

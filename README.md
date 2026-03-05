@@ -13,20 +13,25 @@
 
 ### 1. Backend Setup
 ```bash
-cd "hindustan hackathon/backend"
+cd backend
+
+# Create virtual environment (recommended)
+python -m venv venv
+source venv/bin/activate   # Linux/Mac
+# venv\Scripts\activate    # Windows
 
 # Install dependencies
-pip3 install -r ../requirements.txt
+pip install -r ../requirements.txt
 
 # Copy env file
 cp ../.env.example .env
 # Edit .env if using MongoDB Atlas
 
-# Train the ML model (one-time, ~60s)
-python3 ml/train.py
+# Train the ML model (one-time)
+python ml/train.py
 
 # Seed the database
-python3 seed.py
+python seed.py
 
 # Start the API server
 uvicorn main:app --reload --port 8000
@@ -34,7 +39,7 @@ uvicorn main:app --reload --port 8000
 
 ### 2. Frontend Setup
 ```bash
-cd "hindustan hackathon/frontend"
+cd frontend
 npm install
 npm run dev
 ```
@@ -46,7 +51,7 @@ Open **http://localhost:5173**
 ## Architecture
 
 ```
-frontend/       React 18 + Vite + TypeScript + Tailwind + Recharts
+frontend/       React 19 + Vite + TypeScript + Tailwind + Recharts
 backend/
   main.py       FastAPI app (9 endpoints)
   database.py   MongoDB/Motor async connection

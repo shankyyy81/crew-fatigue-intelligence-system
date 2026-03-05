@@ -22,6 +22,7 @@ function AnimatedNumber({ target, prefix = '', suffix = '', duration = 1500 }: {
 export function ROIPage() {
     const [stats, setStats] = useState<Stats | null>(null)
     const [loading, setLoading] = useState(true)
+    const [error, setError] = useState<string | null>(null)
     const [redCount, setRedCount] = useState(0)
     const [amberCount, setAmberCount] = useState(0)
     const [alertCount, setAlertCount] = useState(0)
@@ -32,7 +33,8 @@ export function ROIPage() {
             setRedCount(c.summary?.red ?? s.red_count)
             setAmberCount(c.summary?.amber ?? s.amber_count)
             setAlertCount(a.total)
-        }).finally(() => setLoading(false))
+        }).catch(() => setError('Failed to load ROI data. Is the backend running?'))
+        .finally(() => setLoading(false))
     }, [])
 
     const savingsPerFlight = 65   // ₹ lakhs per cancellation avoided

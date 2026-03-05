@@ -1,29 +1,39 @@
 import React, { useEffect, useState } from 'react'
 import { CascadeFlight, CrewProfile } from '../types'
 import { getCrew, getCascade } from '../api'
-import { RiskBadge } from '../components/RiskBadge'
-import { Plane, Shield, AlertTriangle, Users, ToggleLeft, ToggleRight } from 'lucide-react'
+import { Plane, Shield, AlertTriangle, Users, ToggleLeft, ToggleRight, WifiOff } from 'lucide-react'
+
+interface CascadeResponse {
+    crew_id: string
+    cascade_flights: CascadeFlight[]
+    total_flights: number
+    at_risk: number
+    protected: number
+    estimated_passengers_impacted: number
+}
 
 export function CascadePage() {
     const [redCrew, setRedCrew] = useState<CrewProfile[]>([])
     const [selected, setSelected] = useState<string>('C9999')
-    const [cascade, setCascade] = useState<any | null>(null)
+    const [cascade, setCascade] = useState<CascadeResponse | null>(null)
     const [loading, setLoading] = useState(false)
     const [showProtected, setShowProtected] = useState(false)
+    const [error, setError] = useState<string | null>(null)
 
     useEffect(() => {
         getCrew({ tier: 'RED' }).then(r => {
             const crew = r.crew || []
             setRedCrew(crew)
-        })
+        }).catch(() => setError('Failed to load crew data.'))
     }, [])
 
     useEffect(() => {
         if (!selected) return
         setLoading(true)
+        setError(null)
         getCascade(selected)
             .then(setCascade)
-            .catch(() => setCascade(null))
+            .catch(() => { setCascade(null); setError('Failed to load cascade data.') })
             .finally(() => setLoading(false))
     }, [selected])
 
@@ -35,6 +45,19 @@ export function CascadePage() {
 
     return (
         <div style={{ display: 'flex', height: '100%', overflow: 'hidden', padding: 20, gap: 20 }}>
+            {/* Error Banner */}
+            {error && (
+                <div style={{
+                    position: 'absolute', top: 20, left: 280, right: 20, zIndex: 10,
+                    display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px',
+                    background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)',
+                    borderRadius: 10, fontSize: 13, color: 'var(--tier-red)',
+                }}>
+                    <WifiOff size={16} />
+                    <span>{error}</span>
+                </div>
+            )}
+
             {/* Left: crew selector */}
             <div style={{ width: 220, flexShrink: 0 }}>
                 <div className="section-title">SELECT RED CREW</div>
