@@ -158,7 +158,7 @@ export function ReplacementsPage() {
                                                     { label: 'Fatigue Score', val: r.final_fatigue_score.toFixed(0), color: 'var(--tier-green)' },
                                                     { label: 'Reach Time', val: `${r.reach_time_hrs}h`, color: 'var(--text-primary)' },
                                                     { label: 'Hours Available', val: `${r.hours_available}h`, color: 'var(--text-primary)' },
-                                                    { label: 'DGCA', val: r.dgca_compliant ? '✓ OK' : '✗ Fail', color: r.dgca_compliant ? 'var(--tier-green)' : 'var(--tier-red)' },
+                                                    { label: 'DGCA', val: r.dgca_compliant ? 'OK' : 'Review', color: r.dgca_compliant ? 'var(--tier-green)' : 'var(--text-primary)' },
                                                 ].map(({ label, val, color }) => (
                                                     <div key={label} style={{ textAlign: 'center', background: 'var(--bg-primary)', borderRadius: 8, padding: '8px 6px' }}>
                                                         <div style={{ fontSize: 15, fontWeight: 800, color }}>{val}</div>
@@ -196,3 +196,5 @@ export function ReplacementsPage() {
         </div>
     )
 }
+
+

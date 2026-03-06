@@ -3,7 +3,7 @@ Seed script — populates MongoDB with crew profiles, predictions,
 alerts, replacements, and cascade events.
 Run: python seed.py
 """
-import os, sys, json, random
+import os, sys, json, random, math
 from datetime import datetime, timedelta
 import pymongo
 from dotenv import load_dotenv
@@ -24,6 +24,23 @@ BASES     = ["DEL", "BOM", "BLR", "MAA", "HYD", "COK", "PNQ"]
 ROLES     = ["Captain", "First Officer", "Cabin Crew"]
 AIRCRAFT  = ["A320", "A321", "B737", "B787"]
 NOW       = datetime.utcnow()
+MIN_REST_HRS = 8
+AVG_REPOSITION_SPEED_KMPH = 750.0
+REPOSITION_BUFFER_HRS = 0.5
+
+AIRPORTS = {
+    "DEL": (28.5562, 77.1000),
+    "BOM": (19.0886, 72.8679),
+    "BLR": (13.1986, 77.7066),
+    "MAA": (12.9941, 80.1709),
+    "HYD": (17.2403, 78.4294),
+    "COK": (10.1520, 76.3930),
+    "PNQ": (18.5822, 73.9197),
+    "LHR": (51.4700, -0.4543),
+    "DXB": (25.2532, 55.3657),
+    "SIN": (1.3644, 103.9915),
+    "CCU": (22.6520, 88.4467),
+}
 
 random.seed(42)
 np.random.seed(42)
@@ -172,28 +189,86 @@ def make_trajectory(crew_id: str, base_tier: str, days: int = 7):
     return trajectory
 
 
+def haversine(lat1, lon1, lat2, lon2):
+    """Great-circle distance in km."""
+    radius_km = 6371.0
+    dlat = math.radians(lat2 - lat1)
+    dlon = math.radians(lon2 - lon1)
+    a = math.sin(dlat / 2) ** 2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon / 2) ** 2
+    return radius_km * (2 * math.asin(math.sqrt(a)))
+
+
+def reposition_travel_hours(origin: str, destination: str) -> float:
+    """Compute reposition travel time using distance / speed + fixed buffer."""
+    if origin == destination:
+        return 0.0
+    if origin not in AIRPORTS or destination not in AIRPORTS:
+        # Conservative fallback for unknown airports.
+        return 5.0
+    distance_km = haversine(*AIRPORTS[origin], *AIRPORTS[destination])
+    return (distance_km / AVG_REPOSITION_SPEED_KMPH) + REPOSITION_BUFFER_HRS
+
+
 def make_next_duties(base: str, aircraft: str, days: int = 5):
-    routes = {
-        "DEL": [["DEL","BOM"], ["DEL","BLR"], ["DEL","MAA"]],
-        "BOM": [["BOM","DEL"], ["BOM","COK"], ["BOM","HYD"]],
-        "BLR": [["BLR","DEL"], ["BLR","MAA"], ["BLR","HYD"]],
-        "MAA": [["MAA","DEL"], ["MAA","BOM"], ["MAA","COK"]],
-        "HYD": [["HYD","BOM"], ["HYD","BLR"], ["HYD","DEL"]],
-        "COK": [["COK","BOM"], ["COK","MAA"], ["COK","BLR"]],
-        "PNQ": [["PNQ","BOM"], ["PNQ","DEL"], ["PNQ","BLR"]],
-    }.get(base, [["DEL", "BOM"]])
+    routes_by_origin = {
+        "DEL": ["BOM", "BLR", "MAA", "HYD", "PNQ"],
+        "BOM": ["DEL", "COK", "HYD", "BLR", "PNQ"],
+        "BLR": ["DEL", "MAA", "HYD", "BOM", "COK"],
+        "MAA": ["DEL", "BOM", "COK", "BLR", "HYD"],
+        "HYD": ["BOM", "BLR", "DEL", "MAA", "PNQ"],
+        "COK": ["BOM", "MAA", "BLR", "DEL"],
+        "PNQ": ["BOM", "DEL", "BLR", "HYD"],
+        "LHR": ["DEL", "BOM"],
+        "DXB": ["DEL", "BOM", "HYD"],
+        "SIN": ["DEL", "BLR", "MAA"],
+        "CCU": ["DEL", "BOM", "BLR"],
+    }
+
     duties = []
+    current_location = base if base in routes_by_origin else "DEL"
+    previous_arrival = None
+
     for d in range(1, days + 1):
-        rt = random.choice(routes)
-        dep = NOW + timedelta(days=d, hours=random.randint(4, 18))
+        # Keep continuity by default; occasionally attempt a reposition leg.
+        next_origin = current_location
+        reposition_hours = 0.0
+
+        if d > 1 and random.random() < 0.15:
+            candidate_origins = [a for a in routes_by_origin.keys() if a != current_location]
+            random.shuffle(candidate_origins)
+            for candidate in candidate_origins:
+                candidate_reposition = reposition_travel_hours(current_location, candidate)
+                min_feasible_departure = previous_arrival + timedelta(hours=MIN_REST_HRS + candidate_reposition)
+                target_departure = NOW + timedelta(days=d, hours=random.randint(4, 18))
+                if min_feasible_departure <= target_departure:
+                    next_origin = candidate
+                    reposition_hours = candidate_reposition
+                    break
+
+        if d == 1:
+            next_origin = current_location
+            earliest_departure = NOW + timedelta(hours=random.randint(8, 16))
+        else:
+            earliest_departure = previous_arrival + timedelta(hours=MIN_REST_HRS + reposition_hours)
+
+        target_departure = NOW + timedelta(days=d, hours=random.randint(4, 18))
+        dep = max(target_departure, earliest_departure + timedelta(minutes=random.randint(0, 90)))
+
+        destinations = routes_by_origin.get(next_origin, ["DEL"])
+        dest = random.choice([a for a in destinations if a != next_origin] or ["DEL"])
+        sector_distance = haversine(*AIRPORTS[next_origin], *AIRPORTS[dest]) if next_origin in AIRPORTS and dest in AIRPORTS else 1200.0
+        duration_hours = round(max(1.2, min(8.0, (sector_distance / 700.0) + 0.35 + random.uniform(-0.15, 0.35))), 1)
+        previous_arrival = dep + timedelta(hours=duration_hours)
+
         duties.append({
             "duty_id": f"FWD{random.randint(10000,99999)}",
             "departure_time": dep.isoformat(),
-            "route": rt,
+            "route": [next_origin, dest],
             "aircraft_type": aircraft,
-            "duration_hrs": round(random.uniform(1.5, 8.0), 1),
-            "station": base,
+            "duration_hrs": duration_hours,
+            "station": next_origin,
         })
+        current_location = dest
     return duties
 
 

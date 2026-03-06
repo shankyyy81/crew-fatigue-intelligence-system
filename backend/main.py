@@ -181,82 +181,360 @@ async def simulate_alert(req: SimulateRequest):
 # ─── GET /replacements/{crew_id} ─────────────────────────────────────────────
 @app.get("/replacements/{crew_id}")
 async def get_replacements(crew_id: str):
-    # Fetch details for the requested crew member
     target_crew = await crew_col().find_one({"crew_id": crew_id})
     if not target_crew:
         raise HTTPException(status_code=404, detail=f"Crew {crew_id} not found")
 
     target_role = target_crew.get("role")
-    target_base = target_crew.get("base")
     target_aircraft = target_crew.get("aircraft_type")
-    
-    # Check if a replacement was already assigned in the static DB
     assigned_doc = await replacements_col().find_one({"for_crew_id": crew_id, "assigned": True})
-    
-    # We will build exactly 3 replacements on-the-fly from the master data
-    candidates_cursor = crew_col().find({
-        "crew_id": {"$ne": crew_id},
-        "role": target_role,
-        "aircraft_type": target_aircraft,
-        "prediction.tier": "GREEN"
-    })
-    
-    candidates = await candidates_cursor.to_list(length=100)
-    
-    if not candidates:
-        raise HTTPException(status_code=404, detail=f"No replacement candidates found for {crew_id}")
-        
-    # Sort candidates logically
-    def candidate_score(c):
-        base_match = -100 if c.get("base") == target_base else 0
-        fatigue = c.get("prediction", {}).get("final_fatigue_score", 0)
-        return base_match + fatigue
 
-    candidates.sort(key=candidate_score)
-    top_candidates = candidates[:3]
-    
+    target_duties = sorted_duties(target_crew.get("next_duties", []))
+    replaced_duty = target_duties[0] if target_duties else None
+    if not replaced_duty:
+        return {"for_crew_id": crew_id, "replacements": [], "count": 0}
+
+    replaced_dep, _ = duty_times(replaced_duty)
+    replaced_origin, _ = extract_route(replaced_duty)
+    if not (replaced_dep and replaced_origin):
+        raise HTTPException(status_code=422, detail=f"Invalid upcoming duty data for {crew_id}")
+
+    candidate_pool = await crew_col().find({
+        "crew_id": {"$ne": crew_id},
+        "prediction.tier": "GREEN"
+    }).to_list(length=500)
+
+    if not candidate_pool:
+        return {"for_crew_id": crew_id, "replacements": [], "count": 0}
+
+    # Progressive fallback to avoid empty replacement panels when strict matching has no hits.
+    candidate_stages = [
+        [c for c in candidate_pool if c.get("role") == target_role and c.get("aircraft_type") == target_aircraft],
+        [c for c in candidate_pool if c.get("aircraft_type") == target_aircraft],
+        [c for c in candidate_pool if c.get("role") == target_role],
+        candidate_pool,
+    ]
+    candidates = next((stage for stage in candidate_stages if stage), [])
+
+    ranked = []
+    for candidate in candidates:
+        candidate_duties = sorted_duties(candidate.get("next_duties", []))
+        has_conflict = has_time_conflict(candidate_duties, replaced_duty)
+        can_reach = can_reach_origin(candidate_duties, candidate.get("base", ""), replaced_duty)
+        limit_violation = violates_duty_limits(candidate_duties, replaced_duty)
+
+        current_loc, available_from = candidate_position_state(candidate_duties, candidate.get("base", ""), replaced_dep)
+        travel = reposition_time_hours(current_loc or "", replaced_origin)
+        reach_dt = available_from + timedelta(hours=travel)
+        reach_time_hrs = max(0.0, (reach_dt - datetime.utcnow()).total_seconds() / 3600.0)
+
+        fatigue = float(candidate.get("prediction", {}).get("final_fatigue_score", 0.0) or 0.0)
+        rep_day_hours = duty_hours_on_date(candidate_duties, replaced_dep.date())
+        rep_duration = float(replaced_duty.get("duration_hrs", 2.0) or 2.0)
+        hours_available = max(0.0, MAX_DUTY_HOURS_PER_DAY - (rep_day_hours + rep_duration))
+
+        ranked.append({
+            "candidate": candidate,
+            "has_conflict": has_conflict,
+            "can_reach": can_reach,
+            "limit_violation": limit_violation,
+            "feasible": (not has_conflict and can_reach and not limit_violation),
+            "reach_time_hrs": reach_time_hrs,
+            "fatigue": fatigue,
+            "hours_available": hours_available,
+        })
+
+    if not ranked:
+        return {"for_crew_id": crew_id, "replacements": [], "count": 0}
+
+    ranked.sort(
+        key=lambda x: (
+            0 if x["feasible"] else 1,
+            x["reach_time_hrs"],
+            x["fatigue"],
+            -x["hours_available"],
+        )
+    )
+    top_candidates = ranked[:3]
+
     docs = []
-    for i, c in enumerate(top_candidates):
-        is_assigned = assigned_doc and assigned_doc["candidate_id"] == c["crew_id"]
-        same_base = c.get("base") == target_base
-        why = f"Same base ({c.get('base')}), {target_aircraft} rated, GREEN tier, DGCA hours compliant" if same_base else f"{c.get('base')} base, {target_aircraft} rated, GREEN tier — can position in time"
-        reach_time = 0.5 + (i * 0.5) if same_base else 2.5 + (i * 0.5)
+    for i, row in enumerate(top_candidates):
+        candidate = row["candidate"]
+        is_assigned = assigned_doc and assigned_doc["candidate_id"] == candidate["crew_id"]
+        if row["feasible"]:
+            why_eligible = "No overlap, reachable with rest+travel, and duty limits compliant"
+        elif row["limit_violation"]:
+            why_eligible = "Closest available candidate; flagged for duty-limit review before assignment"
+        elif row["has_conflict"]:
+            why_eligible = "Closest available candidate; overlapping duty must be rescheduled"
+        elif not row["can_reach"]:
+            why_eligible = "Closest available candidate; reposition timing is tight and needs ops approval"
+        else:
+            why_eligible = "Closest available candidate based on current fatigue and reachability"
 
         docs.append({
             "for_crew_id": crew_id,
             "rank": i + 1,
-            "candidate_id": c["crew_id"],
-            "candidate_name": c["name"],
-            "base": c.get("base", ""),
-            "aircraft_type": c.get("aircraft_type", ""),
-            "role": c.get("role", ""),
+            "candidate_id": candidate["crew_id"],
+            "candidate_name": candidate["name"],
+            "base": candidate.get("base", ""),
+            "aircraft_type": candidate.get("aircraft_type", ""),
+            "role": candidate.get("role", ""),
             "tier": "GREEN",
-            "final_fatigue_score": c.get("prediction", {}).get("final_fatigue_score", 0),
-            "reach_time_hrs": round(reach_time, 1),
-            "dgca_compliant": True,
-            "hours_flown_28d": 40 + i * 5,
-            "hours_available": 30 - i * 5,
-            "why_eligible": why,
+            "final_fatigue_score": candidate.get("prediction", {}).get("final_fatigue_score", 0),
+            "reach_time_hrs": round(row["reach_time_hrs"], 1),
+            "dgca_compliant": not row["limit_violation"],
+            "hours_flown_28d": candidate.get("features", {}).get("hours_flown_72h", 0),
+            "hours_available": round(row["hours_available"], 1),
+            "why_eligible": why_eligible,
             "disruption_cost_impact": round(0.08 + (i * 0.05), 2),
             "assigned": is_assigned,
         })
 
     return {"for_crew_id": crew_id, "replacements": clean_many(docs), "count": len(docs)}
 
-
 # ─── POST /assign_replacement ─────────────────────────────────────────────────
 class AssignRequest(BaseModel):
     for_crew_id: str
     candidate_id: str
 
+import math
+
+AIRPORTS = {
+    "DEL": (28.5562, 77.1000), "BOM": (19.0886, 72.8679), "BLR": (13.1986, 77.7066),
+    "MAA": (12.9941, 80.1709), "HYD": (17.2403, 78.4294), "COK": (10.1520, 76.3930),
+    "PNQ": (18.5822, 73.9197), "LHR": (51.4700, -0.4543), "DXB": (25.2532, 55.3657),
+    "SIN": (1.3644, 103.9915), "CCU": (22.6520, 88.4467)
+}
+
+def haversine(lat1, lon1, lat2, lon2):
+    R = 6371  # Earth radius in km
+    dlat = math.radians(lat2 - lat1)
+    dlon = math.radians(lon2 - lon1)
+    a = math.sin(dlat/2)**2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon/2)**2
+    return R * (2 * math.asin(math.sqrt(a)))
+
+MIN_REST_HOURS = 8
+AVG_REPOSITION_SPEED_KMPH = 750.0
+REPOSITION_BUFFER_HOURS = 0.5
+MAX_DUTY_HOURS_PER_DAY = 8.0
+MAX_CONSECUTIVE_DUTIES = 4
+
+
+def extract_route(duty):
+    """Helper to safely extract the origin and destination of a duty."""
+    route = duty.get("route", [])
+    if isinstance(route, list) and len(route) >= 2:
+        return route[0], route[-1]
+    elif isinstance(route, str) and " \u2192 " in route:
+        parts = route.split(" \u2192 ")
+        return parts[0], parts[-1]
+    elif isinstance(route, str) and "->" in route:
+        parts = route.split("->")
+        return parts[0].strip(), parts[-1].strip()
+    return "", ""
+
+
+def parse_iso_dt(value: str) -> Optional[datetime]:
+    if not value:
+        return None
+    try:
+        dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        return dt.replace(tzinfo=None)
+    except Exception:
+        return None
+
+
+def duty_times(duty):
+    dep = parse_iso_dt(duty.get("departure_time", ""))
+    if not dep:
+        return None, None
+    try:
+        dur = float(duty.get("duration_hrs", 2.0) or 2.0)
+    except Exception:
+        dur = 2.0
+    arr = dep + timedelta(hours=dur)
+    return dep, arr
+
+
+def reposition_time_hours(origin: str, destination: str) -> float:
+    if origin == destination:
+        return 0.0
+    if origin in AIRPORTS and destination in AIRPORTS:
+        dist = haversine(*AIRPORTS[origin], *AIRPORTS[destination])
+        return (dist / AVG_REPOSITION_SPEED_KMPH) + REPOSITION_BUFFER_HOURS
+    return 5.0
+
+
+def duty_key(duty):
+    route = duty.get("route", [])
+    route_key = "->".join(route) if isinstance(route, list) else str(route)
+    return (duty.get("duty_id", ""), duty.get("departure_time", ""), route_key)
+
+
+def duties_overlap(left, right) -> bool:
+    l_dep, l_arr = duty_times(left)
+    r_dep, r_arr = duty_times(right)
+    if not (l_dep and l_arr and r_dep and r_arr):
+        return False
+    return l_dep < r_arr and l_arr > r_dep
+
+
+def sorted_duties(duties):
+    return sorted(duties, key=lambda d: parse_iso_dt(d.get("departure_time", "")) or datetime.max)
+
+
+def last_state(accepted_duties):
+    if not accepted_duties:
+        return None, None
+    prev = accepted_duties[-1]
+    _, prev_dest = extract_route(prev)
+    _, prev_arr = duty_times(prev)
+    if not prev_arr:
+        return None, None
+    return prev_dest, (prev_arr + timedelta(hours=MIN_REST_HOURS))
+
+
+def can_append_duty(accepted_duties, new_duty):
+    origin, _ = extract_route(new_duty)
+    dep, _ = duty_times(new_duty)
+    if not dep:
+        return False
+    if not accepted_duties:
+        return True
+
+    current_location, available_from = last_state(accepted_duties)
+    if not available_from:
+        return False
+    travel = reposition_time_hours(current_location or "", origin or "")
+    return available_from + timedelta(hours=travel) <= dep
+
+
+def has_time_conflict(duties, replaced_duty) -> bool:
+    return any(duties_overlap(d, replaced_duty) for d in duties)
+
+
+def candidate_position_state(candidate_duties, candidate_base, replaced_dep):
+    last_duty = None
+    for duty in sorted_duties(candidate_duties):
+        dep, arr = duty_times(duty)
+        if not (dep and arr):
+            continue
+        if arr <= replaced_dep:
+            last_duty = duty
+        else:
+            break
+
+    if last_duty:
+        _, last_dest = extract_route(last_duty)
+        _, last_arr = duty_times(last_duty)
+        return last_dest or candidate_base, (last_arr + timedelta(hours=MIN_REST_HOURS))
+
+    return candidate_base, datetime.utcnow()
+
+
+def can_reach_origin(candidate_duties, candidate_base, replaced_duty) -> bool:
+    replaced_dep, _ = duty_times(replaced_duty)
+    replaced_origin, _ = extract_route(replaced_duty)
+    if not (replaced_dep and replaced_origin):
+        return False
+
+    current_loc, available_from = candidate_position_state(candidate_duties, candidate_base, replaced_dep)
+    travel = reposition_time_hours(current_loc or "", replaced_origin)
+    return available_from + timedelta(hours=travel) <= replaced_dep
+
+
+def duty_hours_on_date(duties, duty_date):
+    total = 0.0
+    for d in duties:
+        dep, _ = duty_times(d)
+        if dep and dep.date() == duty_date:
+            try:
+                total += float(d.get("duration_hrs", 0) or 0)
+            except Exception:
+                pass
+    return total
+
+
+def max_consecutive_streak(dates):
+    if not dates:
+        return 0
+    ordered = sorted(dates)
+    streak = 1
+    best = 1
+    for i in range(1, len(ordered)):
+        if (ordered[i] - ordered[i - 1]).days == 1:
+            streak += 1
+            best = max(best, streak)
+        elif (ordered[i] - ordered[i - 1]).days > 1:
+            streak = 1
+    return best
+
+
+def violates_duty_limits(candidate_duties, replaced_duty) -> bool:
+    rep_dep, _ = duty_times(replaced_duty)
+    if not rep_dep:
+        return True
+    rep_day = rep_dep.date()
+    try:
+        rep_dur = float(replaced_duty.get("duration_hrs", 2.0) or 2.0)
+    except Exception:
+        rep_dur = 2.0
+
+    if duty_hours_on_date(candidate_duties, rep_day) + rep_dur > MAX_DUTY_HOURS_PER_DAY:
+        return True
+
+    duty_dates = set()
+    for d in candidate_duties:
+        dep, _ = duty_times(d)
+        if dep:
+            duty_dates.add(dep.date())
+    duty_dates.add(rep_day)
+    return max_consecutive_streak(duty_dates) > MAX_CONSECUTIVE_DUTIES
+
+
+def build_feasible_merged_schedule(candidate_duties, transferred_duties):
+    transfer_sorted = sorted_duties(transferred_duties)
+    transfer_keys = {duty_key(d) for d in transfer_sorted}
+
+    # Candidate duties that directly overlap transferred duties are removed first.
+    candidate_non_overlap = [
+        d for d in sorted_duties(candidate_duties)
+        if not any(duties_overlap(d, t) for t in transfer_sorted)
+    ]
+
+    merged = sorted(
+        transfer_sorted + candidate_non_overlap,
+        key=lambda d: (
+            parse_iso_dt(d.get("departure_time", "")) or datetime.max,
+            0 if duty_key(d) in transfer_keys else 1
+        )
+    )
+
+    accepted = []
+    for duty in merged:
+        key = duty_key(duty)
+        if can_append_duty(accepted, duty):
+            accepted.append(duty)
+            continue
+
+        # If a transferred duty becomes infeasible, back out trailing candidate duties first.
+        if key in transfer_keys:
+            while accepted and duty_key(accepted[-1]) not in transfer_keys and not can_append_duty(accepted, duty):
+                accepted.pop()
+            if can_append_duty(accepted, duty):
+                accepted.append(duty)
+            # If still infeasible, skip to avoid impossible chains.
+
+    return accepted
+
 @app.post("/assign_replacement")
 async def assign_replacement(req: AssignRequest):
-    result = await replacements_col().update_one(
+    await replacements_col().update_one(
         {"for_crew_id": req.for_crew_id, "candidate_id": req.candidate_id},
-        {"$set": {"assigned": True, "assigned_at": datetime.utcnow().isoformat()}}
+        {"$set": {"assigned": True, "assigned_at": datetime.utcnow().isoformat()}},
+        upsert=True
     )
-    if result.matched_count == 0:
-        raise HTTPException(status_code=404, detail="Replacement not found")
 
     # Mark cascade as protected
     await cascade_col().update_many(
@@ -264,9 +542,32 @@ async def assign_replacement(req: AssignRequest):
         {"$set": {"protected": True, "replacement_id": req.candidate_id}}
     )
 
-    # Fetch crew name from master database
+    # Fetch crew name and duties from master database
     master_crew = await crew_col().find_one({"crew_id": req.for_crew_id})
     crew_name = master_crew.get("name", req.for_crew_id) if master_crew else req.for_crew_id
+    duties_to_transfer = master_crew.get("next_duties", []) if master_crew else []
+
+    # Demote original crew's tier to PROTECTED and clear their schedule to remove from RED list
+    await crew_col().update_one(
+        {"crew_id": req.for_crew_id},
+        {"$set": {
+            "prediction.tier": "PROTECTED",
+            "prediction.final_fatigue_score": 0,
+            "next_duties": []
+        }}
+    )
+
+    # Fetch candidate to get their existing duties
+    candidate_crew = await crew_col().find_one({"crew_id": req.candidate_id})
+    candidate_duties = candidate_crew.get("next_duties", []) if candidate_crew else []
+
+    # Assign transferred duties to candidate with transfer-priority feasibility merge
+    if duties_to_transfer:
+        valid_duties = build_feasible_merged_schedule(candidate_duties, duties_to_transfer)
+        await crew_col().update_one(
+            {"crew_id": req.candidate_id},
+            {"$set": {"next_duties": valid_duties}}
+        )
 
     # Add resolution alert
     await alerts_col().insert_one({
@@ -414,3 +715,4 @@ async def get_stats():
         "demo_crew_name":           "Captain Priya Sharma",
         "demo_duty_in_hours":       14,
     }
+

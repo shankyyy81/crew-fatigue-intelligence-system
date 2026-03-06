@@ -6,24 +6,24 @@
 
 
 :root {
-  --bg-primary: #0a0d14;
-  --bg-secondary: #0f1420;
-  --bg-card: #131928;
-  --bg-card-hover: #1a2235;
-  --bg-sidebar: #0c1019;
-  --border: #1e2d4a;
-  --border-subtle: #162035;
-  --text-primary: #e8edf5;
-  --text-secondary: #8a9bbf;
-  --text-muted: #4a5a7a;
-  --accent-blue: #3b82f6;
-  --accent-blue-glow: rgba(59, 130, 246, 0.15);
-  --tier-green: #10b981;
-  --tier-green-bg: rgba(16, 185, 129, 0.12);
-  --tier-amber: #f59e0b;
-  --tier-amber-bg: rgba(245, 158, 11, 0.12);
-  --tier-red: #ef4444;
-  --tier-red-bg: rgba(239, 68, 68, 0.12);
+  --bg-primary: #ffffff;
+  --bg-secondary: #f7f9ff;
+  --bg-card: #ffffff;
+  --bg-card-hover: #eef3ff;
+  --bg-sidebar: #001B94;
+  --border: #c8d5ff;
+  --border-subtle: #e1e9ff;
+  --text-primary: #0b1b52;
+  --text-secondary: #3550a3;
+  --text-muted: #5f76bb;
+  --accent-blue: #001B94;
+  --accent-blue-glow: rgba(0, 27, 148, 0.12);
+  --tier-green: #0f9f6a;
+  --tier-green-bg: rgba(15, 159, 106, 0.12);
+  --tier-amber: #d18b00;
+  --tier-amber-bg: rgba(209, 139, 0, 0.12);
+  --tier-red: #cc3d4e;
+  --tier-red-bg: rgba(204, 61, 78, 0.12);
 }
 
 * {
@@ -119,7 +119,7 @@ body,
 
 /* KPI Card */
 .kpi-card {
-  background: linear-gradient(135deg, var(--bg-card) 0%, #141e33 100%);
+  background: linear-gradient(135deg, #ffffff 0%, #edf2ff 100%);
   border: 1px solid var(--border);
   border-radius: 14px;
   padding: 20px;
@@ -142,11 +142,26 @@ body,
 /* Sidebar */
 .sidebar {
   background: var(--bg-sidebar);
-  border-right: 1px solid var(--border-subtle);
+  border-right: 1px solid #00157a;
   width: 220px;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
+}
+
+.sidebar .nav-item {
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.sidebar .nav-item:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+}
+
+.sidebar .nav-item.active {
+  background: #ffffff;
+  color: var(--accent-blue);
+  border: 1px solid rgba(255, 255, 255, 0.9);
 }
 
 .nav-item {
@@ -323,7 +338,7 @@ body,
 .drawer-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.7);
+  background: rgba(0, 27, 148, 0.18);
   z-index: 50;
   display: flex;
   justify-content: flex-end;
@@ -386,7 +401,7 @@ body,
   bottom: calc(100% + 6px);
   left: 50%;
   transform: translateX(-50%);
-  background: #1e2d4a;
+  background: #001B94;
   color: var(--text-primary);
   padding: 5px 10px;
   border-radius: 6px;
