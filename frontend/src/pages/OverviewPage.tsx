@@ -1,14 +1,12 @@
 import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react'
 import type { CrewProfile, Alert, Stats, Tier } from '../types'
-import { getCrew, getAlerts, getStats, simulateAlert } from '../api'
+import { getCrew, getAlerts, getStats } from '../api'
 import { CrewCard } from '../components/CrewCard'
 import { AlertFeed } from '../components/AlertFeed'
 import { CrewDetailDrawer } from '../components/CrewDetailDrawer'
 import { RiskBadge } from '../components/RiskBadge'
-import { CountdownTimer } from '../components/CountdownTimer'
 import { IndiaMap } from '../components/IndiaMap'
-import { showToast } from '../components/Toast'
-import { Users, AlertTriangle, TrendingDown, DollarSign, Search, Zap, RefreshCw, WifiOff } from 'lucide-react'
+import { Users, AlertTriangle, TrendingDown, DollarSign, Search, RefreshCw, WifiOff } from 'lucide-react'
 
 interface KpiCardProps {
     icon: React.ElementType
@@ -53,8 +51,6 @@ export function OverviewPage() {
     const debouncedSearch = useDebounce(search, 300)
     const [tierFilter, setTierFilter] = useState<string>('')
     const [baseFilter, setBaseFilter] = useState<string>('')
-    const [simulating, setSimulating] = useState(false)
-    const [sharmaNextDuty, setSharmaNextDuty] = useState<string | null>(null)
 
     const load = useCallback(async () => {
         setLoading(true)
@@ -71,12 +67,6 @@ export function OverviewPage() {
             setCrew(allCrew)
             setAlerts(alertData.alerts || [])
             setStats(statsData)
-
-            // Find Sharma's next duty time for the countdown
-            const sharma = allCrew.find(c => c.crew_id === 'C9999')
-            if (sharma?.next_duties?.[0]?.departure_time) {
-                setSharmaNextDuty(sharma.next_duties[0].departure_time)
-            }
         } catch (e) {
             console.error(e)
             setError('Failed to load data. Is the backend running on port 8000?')
@@ -105,22 +95,6 @@ export function OverviewPage() {
         }
         return s
     }, [crew])
-
-    const triggerDemo = async () => {
-        setSimulating(true)
-        try {
-            await simulateAlert('sharma_escalation')
-            await load()
-            setSelectedId('C9999')
-            showToast(
-                'alert',
-                'CRITICAL SYSTEM ALERT',
-                'Captain Priya Sharma just crossed RED threshold.',
-                15000
-            )
-        } finally { setSimulating(false) }
-    }
-
     const BASES = ['DEL', 'BOM', 'BLR', 'MAA', 'HYD', 'COK', 'PNQ']
 
     return (
@@ -142,40 +116,6 @@ export function OverviewPage() {
                     </div>
                 </div>
             )}
-
-            {/* Demo Banner */}
-            <div style={{ padding: '12px 20px 0' }}>
-                <div className="demo-banner">
-                    <AlertTriangle size={18} color="var(--tier-red)" />
-                    <div style={{ flex: 1 }}>
-                        <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--tier-red)' }}>DEMO: </span>
-                        <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
-                            Captain Priya Sharma — <strong style={{ color: 'var(--tier-red)' }}>RED</strong>&nbsp;(score 87.3) — DEL→LHR
-                        </span>
-                        {sharmaNextDuty && (
-                            <div style={{ marginTop: 4 }}>
-                                <CountdownTimer targetTime={sharmaNextDuty} label="Duty departure in" size="lg" />
-                            </div>
-                        )}
-                    </div>
-                    <button
-                        className="btn btn-danger"
-                        onClick={triggerDemo}
-                        disabled={simulating}
-                        style={{ flexShrink: 0 }}
-                    >
-                        <Zap size={13} />
-                        {simulating ? 'Activating…' : 'Activate Demo'}
-                    </button>
-                    <button
-                        className="btn btn-ghost"
-                        onClick={() => setSelectedId('C9999')}
-                        style={{ flexShrink: 0, fontSize: 12 }}
-                    >
-                        View Sharma
-                    </button>
-                </div>
-            </div>
 
             {/* KPI Row */}
             <div style={{ padding: '12px 20px', display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, flexShrink: 0 }}>

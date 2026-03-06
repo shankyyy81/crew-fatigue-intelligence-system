@@ -14,18 +14,44 @@ const BASES: Record<string, { x: number; y: number; label: string; city: string 
     PNQ: { x: 81, y: 262, label: 'PNQ', city: 'Pune' },
 }
 
-// Simplified India outline path (SVG viewBox 0 0 340 440)
+// India mainland silhouette (hand-tuned for this viewBox)
 const INDIA_PATH = `
-  M 152,8 L 170,10 L 195,14 L 218,12 L 238,18 L 255,14 L 272,22
-  L 282,34 L 292,50 L 298,68 L 290,82 L 275,86 L 268,100
-  L 282,116 L 296,132 L 308,148 L 310,164 L 300,178 L 285,188
-  L 272,196 L 262,208 L 255,222 L 248,236 L 242,248 L 238,258
-  L 228,264 L 225,274 L 230,286 L 220,302 L 208,316 L 194,330
-  L 180,346 L 168,362 L 158,378 L 150,395 L 144,412 L 140,428
-  L 136,415 L 128,398 L 116,378 L 100,356 L 84,332 L 70,310
-  L 54,288 L 40,264 L 30,244 L 22,222 L 16,200 L 12,178
-  L 10,156 L 12,134 L 18,112 L 16,92  L 24,72  L 36,56
-  L 50,44  L 66,34  L 84,24  L 106,16 L 130,10 Z
+  M 132,18
+  C 146,10 164,8 182,12
+  C 197,15 212,16 226,14
+  C 239,12 251,18 261,28
+  C 272,39 282,54 289,69
+  C 294,81 296,95 292,106
+  C 287,118 279,124 272,130
+  C 282,136 294,145 305,158
+  C 314,170 314,182 306,192
+  C 296,205 281,210 268,217
+  C 262,224 258,233 256,242
+  C 253,253 250,263 243,271
+  C 236,279 228,285 225,295
+  C 223,307 216,319 206,329
+  C 196,340 188,350 181,361
+  C 174,374 170,387 167,399
+  C 164,411 160,423 155,433
+  C 151,428 148,421 145,413
+  C 140,402 134,390 126,378
+  C 117,365 109,351 99,336
+  C 90,322 81,308 73,295
+  C 63,281 53,264 45,245
+  C 37,226 31,207 29,188
+  C 27,169 28,152 32,137
+  C 35,124 40,111 42,99
+  C 43,86 47,74 55,64
+  C 64,53 76,45 89,38
+  C 102,31 116,25 132,18 Z
+
+  M 266,130
+  C 279,128 292,129 304,134
+  C 314,139 321,146 324,156
+  C 321,159 317,160 313,159
+  C 305,156 296,153 287,153
+  C 278,153 271,151 266,146
+  C 262,141 262,135 266,130 Z
 `
 
 // Inner state name decorators (very light, just for atmosphere)
@@ -51,9 +77,9 @@ export const IndiaMap = React.memo(function IndiaMap({ crewByBase, onBaseClick }
 
     const tierColor = (s: BaseStats) => {
         const redPct = s.red / s.total
-        if (redPct > 0.5) return { fill: '#ef4444', glow: 'rgba(239,68,68,0.6)', text: '#fca5a5' }
-        if (redPct > 0.2) return { fill: '#f59e0b', glow: 'rgba(245,158,11,0.6)', text: '#fcd34d' }
-        return { fill: '#10b981', glow: 'rgba(16,185,129,0.5)', text: '#6ee7b7' }
+        if (redPct > 0.5) return { fill: '#ef4444', glow: 'rgba(239,68,68,0.45)', text: '#b91c1c' }
+        if (redPct > 0.2) return { fill: '#f59e0b', glow: 'rgba(245,158,11,0.45)', text: '#92400e' }
+        return { fill: '#10b981', glow: 'rgba(16,185,129,0.4)', text: '#047857' }
     }
 
     const bubbleR = (s: BaseStats) => Math.max(16, Math.min(32, 10 + s.red * 3 + s.total * 0.2))
@@ -92,15 +118,15 @@ export const IndiaMap = React.memo(function IndiaMap({ crewByBase, onBaseClick }
                     {/* India map fill */}
                     <path
                         d={INDIA_PATH}
-                        fill="rgba(15,25,45,0.85)"
-                        stroke="rgba(59,130,246,0.3)"
+                        fill="rgba(232, 240, 255, 0.95)"
+                        stroke="rgba(0, 27, 148, 0.3)"
                         strokeWidth="1.2"
                         strokeLinejoin="round"
                     />
 
                     {/* Subtle state grid dots */}
                     {STATE_DOTS.map((d, i) => (
-                        <circle key={i} cx={d.x} cy={d.y} r={1.2} fill="rgba(59,130,246,0.15)" />
+                        <circle key={i} cx={d.x} cy={d.y} r={1.2} fill="rgba(0, 27, 148, 0.16)" />
                     ))}
 
                     {/* Connector lines between major hubs */}
@@ -109,7 +135,7 @@ export const IndiaMap = React.memo(function IndiaMap({ crewByBase, onBaseClick }
                         return (
                             <line key={`${a}-${b}`}
                                 x1={A.x} y1={A.y} x2={B.x} y2={B.y}
-                                stroke="rgba(59,130,246,0.12)" strokeWidth="0.8" strokeDasharray="3 4"
+                                stroke="rgba(0, 27, 148, 0.16)" strokeWidth="0.8" strokeDasharray="3 4"
                             />
                         )
                     })}
@@ -169,7 +195,7 @@ export const IndiaMap = React.memo(function IndiaMap({ crewByBase, onBaseClick }
                                 <text
                                     x={pos.x} y={pos.y + (r > 22 ? 10 : 9)}
                                     textAnchor="middle" dominantBaseline="middle"
-                                    fill="rgba(255,255,255,0.45)" fontSize="6" fontWeight="600"
+                                    fill="rgba(11, 27, 82, 0.62)" fontSize="6" fontWeight="700"
                                 >
                                     RED
                                 </text>
@@ -178,7 +204,7 @@ export const IndiaMap = React.memo(function IndiaMap({ crewByBase, onBaseClick }
                                 <text
                                     x={pos.x} y={pos.y + r + 12}
                                     textAnchor="middle"
-                                    fill={isHover ? c.text : 'rgba(200,215,240,0.85)'}
+                                    fill={isHover ? c.text : 'rgba(53, 80, 163, 0.9)'}
                                     fontSize="9" fontWeight="700"
                                     fontFamily="JetBrains Mono, monospace"
                                     style={{ transition: 'fill 0.2s' }}
@@ -193,7 +219,7 @@ export const IndiaMap = React.memo(function IndiaMap({ crewByBase, onBaseClick }
                                             x={pos.x + r + 5} y={pos.y - 30}
                                             width={100} height={68}
                                             rx={6} ry={6}
-                                            fill="rgba(13,20,40,0.95)"
+                                            fill="rgba(255,255,255,0.97)"
                                             stroke={c.fill + '60'}
                                             strokeWidth="1"
                                         />
@@ -201,7 +227,7 @@ export const IndiaMap = React.memo(function IndiaMap({ crewByBase, onBaseClick }
                                         <text x={pos.x + r + 10} y={pos.y - 4} fill="#ef4444" fontSize="8">RED:   {s.red}</text>
                                         <text x={pos.x + r + 10} y={pos.y + 8} fill="#f59e0b" fontSize="8">AMBER: {s.amber}</text>
                                         <text x={pos.x + r + 10} y={pos.y + 20} fill="#10b981" fontSize="8">GREEN: {s.green}</text>
-                                        <text x={pos.x + r + 10} y={pos.y + 32} fill="rgba(140,160,200,0.7)" fontSize="7.5">Total: {s.total}</text>
+                                        <text x={pos.x + r + 10} y={pos.y + 32} fill="rgba(53, 80, 163, 0.82)" fontSize="7.5">Total: {s.total}</text>
                                     </g>
                                 )}
                             </g>
@@ -211,9 +237,9 @@ export const IndiaMap = React.memo(function IndiaMap({ crewByBase, onBaseClick }
                     {/* Legend */}
                     <g transform="translate(8, 8)">
                         <rect x="0" y="0" width="82" height="56" rx="6"
-                            fill="rgba(10,16,28,0.85)" stroke="rgba(59,130,246,0.2)" strokeWidth="1" />
-                        <text x="6" y="13" fill="rgba(140,160,200,0.7)" fontSize="7" fontWeight="700" style={{ textTransform: 'uppercase' as const }}>BUBBLE SIZE</text>
-                        <text x="6" y="24" fill="rgba(200,215,240,0.8)" fontSize="7">= # RED crew at base</text>
+                            fill="rgba(255,255,255,0.95)" stroke="rgba(0, 27, 148, 0.2)" strokeWidth="1" />
+                        <text x="6" y="13" fill="rgba(95, 118, 187, 0.9)" fontSize="7" fontWeight="700" style={{ textTransform: 'uppercase' as const }}>BUBBLE SIZE</text>
+                        <text x="6" y="24" fill="rgba(53, 80, 163, 0.9)" fontSize="7">= # RED crew at base</text>
                         {[
                             { c: '#ef4444', l: '>50% RED crew' },
                             { c: '#f59e0b', l: '>20% RED crew' },
@@ -221,7 +247,7 @@ export const IndiaMap = React.memo(function IndiaMap({ crewByBase, onBaseClick }
                         ].map(({ c, l }, i) => (
                             <g key={l} transform={`translate(6,${32 + i * 9})`}>
                                 <circle r="3" cx="3" cy="3" fill={c + '40'} stroke={c} strokeWidth="1" />
-                                <text x="10" y="6" fill="rgba(180,200,230,0.75)" fontSize="7">{l}</text>
+                                <text x="10" y="6" fill="rgba(53, 80, 163, 0.82)" fontSize="7">{l}</text>
                             </g>
                         ))}
                     </g>

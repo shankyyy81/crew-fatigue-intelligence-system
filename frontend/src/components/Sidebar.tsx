@@ -27,8 +27,8 @@ export function Sidebar() {
                         <Zap size={18} color="#fff" />
                     </div>
                     <div>
-                        <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1.2 }}>CFIS</div>
-                        <div style={{ fontSize: 10, color: 'var(--text-muted)', letterSpacing: '0.5px' }}>FATIGUE INTELLIGENCE</div>
+                        <div style={{ fontSize: 14, fontWeight: 800, color: '#ffffff', lineHeight: 1.2 }}>CFIS</div>
+                        <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.72)', letterSpacing: '0.5px' }}>FATIGUE INTELLIGENCE</div>
                     </div>
                 </div>
             </div>
@@ -47,19 +47,9 @@ export function Sidebar() {
                     </NavLink>
                 ))}
             </nav>
-
             {/* Footer */}
-            <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border-subtle)', marginBottom: 8 }}>
-                <div style={{
-                    background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)',
-                    borderRadius: 8, padding: '8px 10px', fontSize: 11,
-                }}>
-                    <div style={{ color: 'var(--tier-red)', fontWeight: 700, marginBottom: 2 }}>🔴 DEMO ACTIVE</div>
-                    <div style={{ color: 'var(--text-muted)' }}>C9999 · Sharma · RED</div>
-                </div>
-            </div>
             <div style={{ padding: '0 16px 12px' }}>
-                <div style={{ fontSize: 10, color: 'var(--text-muted)', textAlign: 'center' }}>
+                <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.72)', textAlign: 'center' }}>
                     IndiGo Ops Intelligence · v1.0
                 </div>
             </div>
