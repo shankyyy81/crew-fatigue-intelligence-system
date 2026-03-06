@@ -181,33 +181,34 @@ async def simulate_alert(req: SimulateRequest):
 # ─── GET /replacements/{crew_id} ─────────────────────────────────────────────
 @app.get("/replacements/{crew_id}")
 async def get_replacements(crew_id: str):
+    """Return Top-3 feasible replacement candidates for EACH duty of the fatigued crew member."""
     target_crew = await crew_col().find_one({"crew_id": crew_id})
     if not target_crew:
         raise HTTPException(status_code=404, detail=f"Crew {crew_id} not found")
 
     target_role = target_crew.get("role")
     target_aircraft = target_crew.get("aircraft_type")
-    assigned_doc = await replacements_col().find_one({"for_crew_id": crew_id, "assigned": True})
+
+    # Fetch all assignment docs for this crew (may have per-duty assignments)
+    assigned_cursor = replacements_col().find({"for_crew_id": crew_id, "assigned": True})
+    assigned_docs = await assigned_cursor.to_list(length=100)
+    # Map duty_id -> assigned candidate_id
+    assigned_map = {doc.get("duty_id", ""): doc.get("candidate_id", "") for doc in assigned_docs}
 
     target_duties = sorted_duties(target_crew.get("next_duties", []))
-    replaced_duty = target_duties[0] if target_duties else None
-    if not replaced_duty:
-        return {"for_crew_id": crew_id, "replacements": [], "count": 0}
+    if not target_duties:
+        return {"for_crew_id": crew_id, "duties": [], "count": 0}
 
-    replaced_dep, _ = duty_times(replaced_duty)
-    replaced_origin, _ = extract_route(replaced_duty)
-    if not (replaced_dep and replaced_origin):
-        raise HTTPException(status_code=422, detail=f"Invalid upcoming duty data for {crew_id}")
-
+    # Build GREEN candidate pool once
     candidate_pool = await crew_col().find({
         "crew_id": {"$ne": crew_id},
         "prediction.tier": "GREEN"
     }).to_list(length=500)
 
     if not candidate_pool:
-        return {"for_crew_id": crew_id, "replacements": [], "count": 0}
+        return {"for_crew_id": crew_id, "duties": [], "count": 0}
 
-    # Progressive fallback to avoid empty replacement panels when strict matching has no hits.
+    # Progressive fallback stages
     candidate_stages = [
         [c for c in candidate_pool if c.get("role") == target_role and c.get("aircraft_type") == target_aircraft],
         [c for c in candidate_pool if c.get("aircraft_type") == target_aircraft],
@@ -216,87 +217,109 @@ async def get_replacements(crew_id: str):
     ]
     candidates = next((stage for stage in candidate_stages if stage), [])
 
-    ranked = []
-    for candidate in candidates:
-        candidate_duties = sorted_duties(candidate.get("next_duties", []))
-        has_conflict = has_time_conflict(candidate_duties, replaced_duty)
-        can_reach = can_reach_origin(candidate_duties, candidate.get("base", ""), replaced_duty)
-        limit_violation = violates_duty_limits(candidate_duties, replaced_duty)
+    duty_results = []
 
-        current_loc, available_from = candidate_position_state(candidate_duties, candidate.get("base", ""), replaced_dep)
-        travel = reposition_time_hours(current_loc or "", replaced_origin)
-        reach_dt = available_from + timedelta(hours=travel)
-        reach_time_hrs = max(0.0, (reach_dt - datetime.utcnow()).total_seconds() / 3600.0)
+    for duty in target_duties:
+        duty_dep, duty_arr = duty_times(duty)
+        duty_origin, duty_dest = extract_route(duty)
+        if not (duty_dep and duty_origin):
+            continue
 
-        fatigue = float(candidate.get("prediction", {}).get("final_fatigue_score", 0.0) or 0.0)
-        rep_day_hours = duty_hours_on_date(candidate_duties, replaced_dep.date())
-        rep_duration = float(replaced_duty.get("duration_hrs", 2.0) or 2.0)
-        hours_available = max(0.0, MAX_DUTY_HOURS_PER_DAY - (rep_day_hours + rep_duration))
+        duty_id = duty.get("duty_id", "")
+        route_display = f"{duty_origin} → {duty_dest}" if duty_dest else duty_origin
+        assigned_candidate = assigned_map.get(duty_id, "")
 
-        ranked.append({
-            "candidate": candidate,
-            "has_conflict": has_conflict,
-            "can_reach": can_reach,
-            "limit_violation": limit_violation,
-            "feasible": (not has_conflict and can_reach and not limit_violation),
-            "reach_time_hrs": reach_time_hrs,
-            "fatigue": fatigue,
-            "hours_available": hours_available,
+        ranked = []
+        for candidate in candidates:
+            candidate_duties = sorted_duties(candidate.get("next_duties", []))
+            conflict = has_time_conflict(candidate_duties, duty)
+            reachable = can_reach_origin(candidate_duties, candidate.get("base", ""), duty)
+            limit_violation = violates_duty_limits(candidate_duties, duty)
+            feasible = (not conflict and reachable and not limit_violation)
+
+            # Compute composite score using the weighted formula
+            score, travel_hrs, fatigue, hours_avail = _compute_candidate_score(
+                candidate, candidate_duties, duty, duty_dep, duty_origin
+            )
+
+            current_loc, available_from = candidate_position_state(
+                candidate_duties, candidate.get("base", ""), duty_dep
+            )
+            travel = reposition_time_hours(current_loc or "", duty_origin)
+            reach_dt = available_from + timedelta(hours=travel)
+            reach_time_hrs = max(0.0, (reach_dt - datetime.utcnow()).total_seconds() / 3600.0)
+
+            ranked.append({
+                "candidate": candidate,
+                "feasible": feasible,
+                "conflict": conflict,
+                "reachable": reachable,
+                "limit_violation": limit_violation,
+                "score": score,
+                "reach_time_hrs": reach_time_hrs,
+                "fatigue": fatigue,
+                "hours_available": hours_avail,
+            })
+
+        # Sort: feasible first, then by composite score (lower is better)
+        ranked.sort(key=lambda x: (0 if x["feasible"] else 1, x["score"]))
+        top3 = ranked[:3]
+
+        replacement_docs = []
+        for i, row in enumerate(top3):
+            c = row["candidate"]
+            is_assigned = assigned_candidate == c["crew_id"]
+
+            if row["feasible"]:
+                why = "No overlap, reachable with rest+travel, and duty limits compliant"
+            elif row["limit_violation"]:
+                why = "Closest available candidate; flagged for duty-limit review before assignment"
+            elif row["conflict"]:
+                why = "Closest available candidate; overlapping duty must be rescheduled"
+            elif not row["reachable"]:
+                why = "Closest available candidate; reposition timing is tight and needs ops approval"
+            else:
+                why = "Closest available candidate based on current fatigue and reachability"
+
+            replacement_docs.append({
+                "for_crew_id": crew_id,
+                "duty_id": duty_id,
+                "rank": i + 1,
+                "candidate_id": c["crew_id"],
+                "candidate_name": c["name"],
+                "base": c.get("base", ""),
+                "aircraft_type": c.get("aircraft_type", ""),
+                "role": c.get("role", ""),
+                "tier": "GREEN",
+                "final_fatigue_score": c.get("prediction", {}).get("final_fatigue_score", 0),
+                "reach_time_hrs": round(row["reach_time_hrs"], 1),
+                "dgca_compliant": not row["limit_violation"],
+                "hours_flown_28d": c.get("features", {}).get("hours_flown_72h", 0),
+                "hours_available": round(row["hours_available"], 1),
+                "why_eligible": why,
+                "disruption_cost_impact": round(0.08 + (i * 0.05), 2),
+                "score": row["score"],
+                "assigned": is_assigned,
+            })
+
+        duty_results.append({
+            "duty_id": duty_id,
+            "route": route_display,
+            "departure_time": duty.get("departure_time", ""),
+            "duration_hrs": duty.get("duration_hrs", 0),
+            "aircraft_type": duty.get("aircraft_type", ""),
+            "station": duty.get("station", ""),
+            "replacements": replacement_docs,
+            "assigned_candidate": assigned_candidate or None,
         })
 
-    if not ranked:
-        return {"for_crew_id": crew_id, "replacements": [], "count": 0}
-
-    ranked.sort(
-        key=lambda x: (
-            0 if x["feasible"] else 1,
-            x["reach_time_hrs"],
-            x["fatigue"],
-            -x["hours_available"],
-        )
-    )
-    top_candidates = ranked[:3]
-
-    docs = []
-    for i, row in enumerate(top_candidates):
-        candidate = row["candidate"]
-        is_assigned = assigned_doc and assigned_doc["candidate_id"] == candidate["crew_id"]
-        if row["feasible"]:
-            why_eligible = "No overlap, reachable with rest+travel, and duty limits compliant"
-        elif row["limit_violation"]:
-            why_eligible = "Closest available candidate; flagged for duty-limit review before assignment"
-        elif row["has_conflict"]:
-            why_eligible = "Closest available candidate; overlapping duty must be rescheduled"
-        elif not row["can_reach"]:
-            why_eligible = "Closest available candidate; reposition timing is tight and needs ops approval"
-        else:
-            why_eligible = "Closest available candidate based on current fatigue and reachability"
-
-        docs.append({
-            "for_crew_id": crew_id,
-            "rank": i + 1,
-            "candidate_id": candidate["crew_id"],
-            "candidate_name": candidate["name"],
-            "base": candidate.get("base", ""),
-            "aircraft_type": candidate.get("aircraft_type", ""),
-            "role": candidate.get("role", ""),
-            "tier": "GREEN",
-            "final_fatigue_score": candidate.get("prediction", {}).get("final_fatigue_score", 0),
-            "reach_time_hrs": round(row["reach_time_hrs"], 1),
-            "dgca_compliant": not row["limit_violation"],
-            "hours_flown_28d": candidate.get("features", {}).get("hours_flown_72h", 0),
-            "hours_available": round(row["hours_available"], 1),
-            "why_eligible": why_eligible,
-            "disruption_cost_impact": round(0.08 + (i * 0.05), 2),
-            "assigned": is_assigned,
-        })
-
-    return {"for_crew_id": crew_id, "replacements": clean_many(docs), "count": len(docs)}
+    return {"for_crew_id": crew_id, "duties": duty_results, "count": len(duty_results)}
 
 # ─── POST /assign_replacement ─────────────────────────────────────────────────
 class AssignRequest(BaseModel):
     for_crew_id: str
     candidate_id: str
+    duty_id: str = ""  # When provided, assigns only this specific duty
 
 import math
 
@@ -493,6 +516,41 @@ def violates_duty_limits(candidate_duties, replaced_duty) -> bool:
     return max_consecutive_streak(duty_dates) > MAX_CONSECUTIVE_DUTIES
 
 
+def _compute_candidate_score(candidate, candidate_duties, duty, replaced_dep, replaced_origin):
+    """Compute composite replacement score (lower = better).
+    Weights: travel 0.4, schedule disruption 0.3, fatigue 0.2, available hours 0.1"""
+    # Travel component: reposition time in hours (capped at 10h for normalization)
+    current_loc, available_from = candidate_position_state(
+        candidate_duties, candidate.get("base", ""), replaced_dep
+    )
+    travel_hrs = reposition_time_hours(current_loc or "", replaced_origin)
+    travel_norm = min(travel_hrs / 10.0, 1.0)
+
+    # Schedule disruption: how many existing duties fall on the same day
+    rep_day = replaced_dep.date()
+    same_day_count = sum(
+        1 for d in candidate_duties
+        if (dep := parse_iso_dt(d.get("departure_time", ""))) and dep.date() == rep_day
+    )
+    disruption_norm = min(same_day_count / 3.0, 1.0)
+
+    # Fatigue margin: lower fatigue score = more margin = better
+    fatigue = float(candidate.get("prediction", {}).get("final_fatigue_score", 0.0) or 0.0)
+    fatigue_norm = fatigue / 100.0
+
+    # Available hours: more available = better (invert so lower score = better)
+    try:
+        rep_dur = float(duty.get("duration_hrs", 2.0) or 2.0)
+    except Exception:
+        rep_dur = 2.0
+    day_hours = duty_hours_on_date(candidate_duties, rep_day)
+    hours_available = max(0.0, MAX_DUTY_HOURS_PER_DAY - (day_hours + rep_dur))
+    avail_norm = 1.0 - min(hours_available / MAX_DUTY_HOURS_PER_DAY, 1.0)
+
+    score = 0.4 * travel_norm + 0.3 * disruption_norm + 0.2 * fatigue_norm + 0.1 * avail_norm
+    return round(score, 3), travel_hrs, fatigue, hours_available
+
+
 def build_feasible_merged_schedule(candidate_duties, transferred_duties):
     transfer_sorted = sorted_duties(transferred_duties)
     transfer_keys = {duty_key(d) for d in transfer_sorted}
@@ -530,8 +588,9 @@ def build_feasible_merged_schedule(candidate_duties, transferred_duties):
 
 @app.post("/assign_replacement")
 async def assign_replacement(req: AssignRequest):
+    # Record the assignment, keyed by duty_id for per-duty tracking
     await replacements_col().update_one(
-        {"for_crew_id": req.for_crew_id, "candidate_id": req.candidate_id},
+        {"for_crew_id": req.for_crew_id, "candidate_id": req.candidate_id, "duty_id": req.duty_id},
         {"$set": {"assigned": True, "assigned_at": datetime.utcnow().isoformat()}},
         upsert=True
     )
@@ -545,16 +604,27 @@ async def assign_replacement(req: AssignRequest):
     # Fetch crew name and duties from master database
     master_crew = await crew_col().find_one({"crew_id": req.for_crew_id})
     crew_name = master_crew.get("name", req.for_crew_id) if master_crew else req.for_crew_id
-    duties_to_transfer = master_crew.get("next_duties", []) if master_crew else []
+    all_duties = master_crew.get("next_duties", []) if master_crew else []
 
-    # Demote original crew's tier to PROTECTED and clear their schedule to remove from RED list
+    # Identify the specific duty to transfer
+    if req.duty_id:
+        duties_to_transfer = [d for d in all_duties if d.get("duty_id") == req.duty_id]
+        remaining_duties = [d for d in all_duties if d.get("duty_id") != req.duty_id]
+    else:
+        # Fallback: transfer all duties (legacy behavior)
+        duties_to_transfer = all_duties
+        remaining_duties = []
+
+    # Update original crew: remove only the transferred duty, keep the rest
+    update_fields = {"next_duties": remaining_duties}
+    # If all duties are now assigned, mark crew as PROTECTED
+    if not remaining_duties:
+        update_fields["prediction.tier"] = "PROTECTED"
+        update_fields["prediction.final_fatigue_score"] = 0
+
     await crew_col().update_one(
         {"crew_id": req.for_crew_id},
-        {"$set": {
-            "prediction.tier": "PROTECTED",
-            "prediction.final_fatigue_score": 0,
-            "next_duties": []
-        }}
+        {"$set": update_fields}
     )
 
     # Fetch candidate to get their existing duties
@@ -570,22 +640,24 @@ async def assign_replacement(req: AssignRequest):
         )
 
     # Add resolution alert
+    duty_label = f" duty {req.duty_id}" if req.duty_id else ""
     await alerts_col().insert_one({
         "crew_id": req.for_crew_id,
         "crew_name": crew_name,
         "tier_from": "RED",
-        "tier_to": "PROTECTED",
-        "reason": f"Replacement assigned: {req.candidate_id}. Cascade risk resolved.",
+        "tier_to": "PROTECTED" if not remaining_duties else "RED",
+        "reason": f"Replacement assigned: {req.candidate_id} for{duty_label}. {'All duties reassigned — crew protected.' if not remaining_duties else 'Partial duty reassignment.'}",
         "top_factors": [],
         "timestamp": datetime.utcnow().isoformat(),
-        "status": "resolved",
+        "status": "resolved" if not remaining_duties else "partial",
         "responsible_team": "ops_control",
     })
 
     return {
         "success": True,
-        "message": f"Replacement {req.candidate_id} assigned for {req.for_crew_id}",
-        "cascade_protected": True,
+        "message": f"Replacement {req.candidate_id} assigned for {req.for_crew_id}{duty_label}",
+        "cascade_protected": not remaining_duties,
+        "duties_remaining": len(remaining_duties),
         "estimated_savings_inr_lakhs": 65,
     }
 

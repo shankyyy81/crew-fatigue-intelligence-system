@@ -17,8 +17,8 @@ export const simulateAlert = (scenario = 'sharma_escalation') =>
 export const getReplacements = (crewId: string) =>
     api.get(`/replacements/${crewId}`).then(r => r.data)
 
-export const assignReplacement = (forCrewId: string, candidateId: string) =>
-    api.post('/assign_replacement', { for_crew_id: forCrewId, candidate_id: candidateId }).then(r => r.data)
+export const assignReplacement = (forCrewId: string, candidateId: string, dutyId: string) =>
+    api.post('/assign_replacement', { for_crew_id: forCrewId, candidate_id: candidateId, duty_id: dutyId }).then(r => r.data)
 
 export const getCascade = (crewId: string) =>
     api.get(`/cascade/${crewId}`).then(r => r.data)

@@ -63,6 +63,7 @@ export interface Alert {
 
 export interface Replacement {
     for_crew_id: string
+    duty_id: string
     rank: number
     candidate_id: string
     candidate_name: string
@@ -77,7 +78,19 @@ export interface Replacement {
     hours_available: number
     why_eligible: string
     disruption_cost_impact: number
+    score: number
     assigned: boolean
+}
+
+export interface DutyReplacements {
+    duty_id: string
+    route: string
+    departure_time: string
+    duration_hrs: number
+    aircraft_type: string
+    station: string
+    replacements: Replacement[]
+    assigned_candidate: string | null
 }
 
 export interface CascadeFlight {
